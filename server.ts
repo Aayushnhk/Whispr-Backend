@@ -106,17 +106,15 @@ interface UserSocketData {
 const dev = process.env.NODE_ENV !== 'production';
 const app = next({ dev });
 const handle = app.getRequestHandler();
-const port = process.env.PORT || 4001;
+const port = process.env.PORT || 10000;
 
 const allowedOrigins = [
   'https://whispr-o7.vercel.app',
-  'http://localhost:3000',
-  'https://whispr-backend-sarl.onrender.com'
+  'http://localhost:3000'
 ];
 
 app.prepare().then(() => {
   const server = createServer((req, res) => {
-    // Enhanced CORS handling
     const origin = req.headers.origin;
     if (origin && allowedOrigins.includes(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
@@ -138,7 +136,13 @@ app.prepare().then(() => {
 
   const io = new SocketIOServer(server, {
     cors: {
-      origin: allowedOrigins,
+      origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'));
+        }
+      },
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       credentials: true,
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],

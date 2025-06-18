@@ -1,25 +1,24 @@
-// app/api/auth/refresh/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { generateToken, verifyToken } from '@/lib/auth';
 import dbConnect from '@/lib/db/connect';
 import User, { IUser } from '@/models/User';
 import { corsMiddleware, handleOptions } from '@/lib/cors';
 
-export async function OPTIONS(req: NextRequest) {
+export async function OPTIONS(_req: NextRequest) {
   return handleOptions();
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(_req: NextRequest) {
   await dbConnect();
 
   try {
-    const { refreshToken } = await req.json();
+    const { refreshToken } = await _req.json();
     if (!refreshToken) {
       const response = NextResponse.json(
         { message: 'Refresh token is required' },
         { status: 400 }
       );
-      return corsMiddleware(req, response);
+      return corsMiddleware(_req, response);
     }
 
     const decoded = verifyToken(refreshToken, true);
@@ -28,7 +27,7 @@ export async function POST(req: NextRequest) {
         { message: 'Invalid refresh token' },
         { status: 401 }
       );
-      return corsMiddleware(req, response);
+      return corsMiddleware(_req, response);
     }
 
     const user = await User.findById(decoded.userId).select('+refreshToken').exec() as IUser | null;
@@ -37,7 +36,7 @@ export async function POST(req: NextRequest) {
         { message: 'Invalid refresh token' },
         { status: 401 }
       );
-      return corsMiddleware(req, response);
+      return corsMiddleware(_req, response);
     }
 
     const newToken = generateToken({ userId: user._id.toString() });
@@ -55,13 +54,13 @@ export async function POST(req: NextRequest) {
       refreshToken: newRefreshToken,
     }, { status: 200 });
 
-    return corsMiddleware(req, response);
+    return corsMiddleware(_req, response);
   } catch (error) {
     console.error('Refresh token error:', error);
     const response = NextResponse.json(
       { message: 'Internal server error' },
       { status: 500 }
     );
-    return corsMiddleware(req, response);
+    return corsMiddleware(_req, response);
   }
 }

@@ -1,4 +1,3 @@
-// app/api/admin/users/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import dbConnect from '@/lib/db/connect';
@@ -41,74 +40,74 @@ const authenticateAndAuthorize = async (req: AuthNextRequest): Promise<NextRespo
   }
 };
 
-export async function OPTIONS(req: NextRequest) {
+export async function OPTIONS(_req: NextRequest) {
   return handleOptions();
 }
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   await dbConnect();
 
-  const authResponse = await authenticateAndAuthorize(req as AuthNextRequest);
+  const authResponse = await authenticateAndAuthorize(_req as AuthNextRequest);
   if (authResponse) {
     return authResponse;
   }
 
-  const authReq = req as AuthNextRequest;
+  const authReq = _req as AuthNextRequest;
 
   if (authReq.user?.role !== 'admin') {
     const response = NextResponse.json({ message: 'Access denied: Admin role required' }, { status: 403 });
-    return corsMiddleware(req, response);
+    return corsMiddleware(_req, response);
   }
 
   try {
     const users = await User.find({}, 'username email role profilePicture banned firstName lastName createdAt updatedAt');
     const response = NextResponse.json({ users }, { status: 200 });
-    return corsMiddleware(req, response);
+    return corsMiddleware(_req, response);
   } catch (error) {
     console.error('Error fetching users:', error);
     const response = NextResponse.json({ message: 'Internal server error' }, { status: 500 });
-    return corsMiddleware(req, response);
+    return corsMiddleware(_req, response);
   }
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(_req: NextRequest) {
   await dbConnect();
 
-  const authResponse = await authenticateAndAuthorize(req as AuthNextRequest);
+  const authResponse = await authenticateAndAuthorize(_req as AuthNextRequest);
   if (authResponse) {
     return authResponse;
   }
 
-  const authReq = req as AuthNextRequest;
+  const authReq = _req as AuthNextRequest;
 
   if (authReq.user?.role !== 'admin') {
     const response = NextResponse.json({ message: 'Access denied: Admin role required' }, { status: 403 });
-    return corsMiddleware(req, response);
+    return corsMiddleware(_req, response);
   }
 
   try {
-    const { userId, role } = await req.json();
+    const { userId, role } = await _req.json();
 
     if (!userId || !role) {
       const response = NextResponse.json({ message: 'User ID and role are required' }, { status: 400 });
-      return corsMiddleware(req, response);
+      return corsMiddleware(_req, response);
     }
 
     if (!['user', 'admin'].includes(role)) {
       const response = NextResponse.json({ message: 'Invalid role specified. Must be "user" or "admin".' }, { status: 400 });
-      return corsMiddleware(req, response);
+      return corsMiddleware(_req, response);
     }
 
     const userToUpdate = await User.findById(userId) as IUser | null;
 
     if (!userToUpdate) {
       const response = NextResponse.json({ message: 'User not found' }, { status: 404 });
-      return corsMiddleware(req, response);
+      return corsMiddleware(_req, response);
     }
 
     if ((userToUpdate._id as unknown as { toString: () => string }).toString() === authReq.user.id && role === 'user') {
       const response = NextResponse.json({ message: "Cannot demote yourself to a regular user." }, { status: 403 });
-      return corsMiddleware(req, response);
+      return corsMiddleware(_req, response);
     }
 
     userToUpdate.role = role;
@@ -129,10 +128,10 @@ export async function POST(req: NextRequest) {
       },
     }, { status: 200 });
 
-    return corsMiddleware(req, response);
+    return corsMiddleware(_req, response);
   } catch (error) {
     console.error('Error updating user role:', error);
     const response = NextResponse.json({ message: 'Internal server error' }, { status: 500 });
-    return corsMiddleware(req, response);
+    return corsMiddleware(_req, response);
   }
 }

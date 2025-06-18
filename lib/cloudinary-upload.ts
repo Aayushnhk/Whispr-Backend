@@ -8,6 +8,14 @@ cloudinary.config({
 
 interface CloudinaryUploadResult {
   secure_url: string;
+  public_id?: string;
+  resource_type?: string;
+  [key: string]: unknown; // Safe index signature
+}
+
+interface CloudinaryError {
+  message: string;
+  http_code?: number;
 }
 
 export async function uploadFileToCloudinary(
@@ -24,7 +32,7 @@ export async function uploadFileToCloudinary(
         folder,
         resource_type: resourceType,
       },
-      (error, result) => {
+      (error: CloudinaryError | undefined, result: CloudinaryUploadResult | undefined) => {
         if (error) {
           console.error('Cloudinary upload error:', error);
           return reject(error);
@@ -50,7 +58,7 @@ export function getCloudinaryResourceType(fileType: string): 'image' | 'video' |
 export async function deleteFileFromCloudinary(fileUrl: string): Promise<void> {
   try {
     const urlParts = fileUrl.split('/');
-    const versionIndex = urlParts.findIndex(part => part.startsWith('v')) + 1;
+    const versionIndex = urlParts.findIndex((part) => part.startsWith('v')) + 1;
     let publicId = urlParts.slice(versionIndex).join('/');
     publicId = publicId.substring(0, publicId.lastIndexOf('.'));
 
@@ -64,7 +72,7 @@ export async function deleteFileFromCloudinary(fileUrl: string): Promise<void> {
     } else {
       console.warn(`Could not extract public_id from URL for deletion: ${fileUrl}`);
     }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error deleting file from Cloudinary:', error);
   }
 }

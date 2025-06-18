@@ -13,7 +13,12 @@ cloudinary.config({
 });
 
 interface DecodedToken {
-  id: string; // Changed from userId to id
+  id: string;
+}
+
+interface CloudinaryError {
+  http_code?: number;
+  message: string;
 }
 
 interface UploadResponse {
@@ -32,14 +37,14 @@ interface UploadResponse {
       firstName?: string;
       lastName?: string;
     };
-    fileUrl?: string; // Made optional
+    fileUrl?: string;
     fileType: IMessage['fileType'];
-    fileName?: string; // Made optional
+    fileName?: string;
     chatType: IMessage['chatType'];
     isEdited: boolean;
     createdAt: Date;
     replyTo?: IMessage['replyTo'];
-    isProfilePictureUpload?: boolean; // Made optional
+    isProfilePictureUpload?: boolean;
   };
 }
 
@@ -223,10 +228,10 @@ export async function POST(req: NextRequest) {
     };
 
     return NextResponse.json(response, { status: 200 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('POST /api/upload: Server error during upload:', error);
-    if (error.http_code && error.message) {
-      return NextResponse.json({ message: `Cloudinary upload failed: ${error.message}` }, { status: error.http_code });
+    if (typeof error === 'object' && error !== null && 'http_code' in error && 'message' in error) {
+      return NextResponse.json({ message: `Cloudinary upload failed: ${(error as CloudinaryError).message}` }, { status: (error as CloudinaryError).http_code });
     }
     return NextResponse.json({ message: 'Internal server error during upload' }, { status: 500 });
   }

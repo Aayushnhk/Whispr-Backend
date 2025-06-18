@@ -9,6 +9,11 @@ interface DecodedToken {
   role: 'user' | 'admin';
 }
 
+interface MongoError {
+  name?: string;
+  errors?: Record<string, { message: string }>;
+}
+
 async function verifyToken(req: NextRequest): Promise<{ userId: string; role: 'user' | 'admin' } | { error: string; status: number }> {
   const authHeader = req.headers.get('authorization');
   const token = authHeader && authHeader.split(' ')[1];
@@ -33,10 +38,14 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
-export async function PUT(req: NextRequest, context: { params: { id: string } }) {
+export async function PUT(req: NextRequest) {
   await dbConnect();
 
-  const roomId = context.params.id;
+  // Access params from req.nextUrl.pathname or query
+  const roomId = req.nextUrl.pathname.split('/').pop();
+  if (!roomId) {
+    return NextResponse.json({ message: 'Room ID is required' }, { status: 400 });
+  }
   console.log(`PUT /api/rooms/${roomId}: Incoming request to update room.`);
 
   const authResult = await verifyToken(req);
@@ -51,8 +60,8 @@ export async function PUT(req: NextRequest, context: { params: { id: string } })
   let requestData: FormData;
   try {
     requestData = await req.formData();
-  } catch (formError) {
-    console.error(`PUT /api/rooms/${roomId}: Failed to parse form data:`, getErrorMessage(formError));
+  } catch (error: unknown) {
+    console.error(`PUT /api/rooms/${roomId}: Failed to parse form data:`, getErrorMessage(error));
     return NextResponse.json({ message: 'Invalid form data in request body.' }, { status: 400 });
   }
 
@@ -120,14 +129,14 @@ export async function PUT(req: NextRequest, context: { params: { id: string } })
 
     console.log(`PUT /api/rooms/${roomId}: Room updated successfully with ID: ${updatedRoom._id}.`);
     return NextResponse.json(updatedRoom, { status: 200 });
-
-  } catch (error) {
-    if ((error as any).name === 'CastError') {
+  } catch (error: unknown) {
+    const mongoError = error as MongoError;
+    if (mongoError.name === 'CastError') {
       console.error(`PUT /api/rooms/${roomId}: Invalid Room ID format.`, error);
       return NextResponse.json({ message: 'Invalid room ID format.' }, { status: 400 });
     }
-    if ((error as any).name === 'ValidationError') {
-      const messages = Object.values((error as any).errors).map((err: any) => err.message);
+    if (mongoError.name === 'ValidationError') {
+      const messages = Object.values(mongoError.errors || {}).map((err) => (err as { message: string }).message);
       console.error(`PUT /api/rooms/${roomId}: Validation error:`, messages);
       return NextResponse.json({ message: 'Validation Error', errors: messages }, { status: 400 });
     }
@@ -136,10 +145,14 @@ export async function PUT(req: NextRequest, context: { params: { id: string } })
   }
 }
 
-export async function DELETE(req: NextRequest, context: { params: { id: string } }) {
+export async function DELETE(req: NextRequest) {
   await dbConnect();
 
-  const roomId = context.params.id;
+  // Access params from req.nextUrl.pathname
+  const roomId = req.nextUrl.pathname.split('/').pop();
+  if (!roomId) {
+    return NextResponse.json({ message: 'Room ID is required' }, { status: 400 });
+  }
   console.log(`DELETE /api/rooms/${roomId}: Incoming request to delete room.`);
 
   const authResult = await verifyToken(req);
@@ -175,9 +188,9 @@ export async function DELETE(req: NextRequest, context: { params: { id: string }
     await room.deleteOne();
     console.log(`DELETE /api/rooms/${roomId}: Room deleted successfully.`);
     return NextResponse.json({ message: 'Room deleted successfully.' }, { status: 200 });
-
-  } catch (error) {
-    if ((error as any).name === 'CastError') {
+  } catch (error: unknown) {
+    const mongoError = error as MongoError;
+    if (mongoError.name === 'CastError') {
       console.error(`DELETE /api/rooms/${roomId}: Invalid Room ID format.`, error);
       return NextResponse.json({ message: 'Invalid room ID format.' }, { status: 400 });
     }

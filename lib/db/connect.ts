@@ -5,12 +5,16 @@ interface CachedConnection {
   promise: Promise<typeof mongoose> | null;
 }
 
+interface GlobalWithMongoose {
+  mongoose?: CachedConnection;
+}
+
 const MONGODB_URI = process.env.MONGODB_URI;
 
-let cached: CachedConnection = (global as any).mongoose || { conn: null, promise: null };
+const cached: CachedConnection = (global as GlobalWithMongoose).mongoose || { conn: null, promise: null };
 
-if (!(global as any).mongoose) {
-  (global as any).mongoose = cached;
+if (!(global as GlobalWithMongoose).mongoose) {
+  (global as GlobalWithMongoose).mongoose = cached;
 }
 
 async function dbConnect(): Promise<typeof mongoose> {

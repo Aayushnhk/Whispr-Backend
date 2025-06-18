@@ -28,9 +28,11 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ message: 'User registered successfully', userId: newUser._id }, { status: 201 });
-
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Registration error:', error);
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 11000) {
+      return NextResponse.json({ message: 'This email address is already registered.' }, { status: 409 });
+    }
     return NextResponse.json({ message: 'Server error during registration' }, { status: 500 });
   }
 }

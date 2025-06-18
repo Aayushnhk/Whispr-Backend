@@ -7,15 +7,16 @@ interface DecodedToken {
   userId: string;
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { userId: string } }
-) {
+export async function GET(request: NextRequest) {
   await connect();
 
-  try {
-    const { userId } = params;
+  // Extract userId from req.nextUrl.pathname
+  const userId = request.nextUrl.pathname.split('/').pop();
+  if (!userId) {
+    return NextResponse.json({ message: 'User ID is required' }, { status: 400 });
+  }
 
+  try {
     const token = request.headers.get('authorization')?.split(' ')[1];
     if (!token) {
       return NextResponse.json({ message: 'Authentication required' }, { status: 401 });
@@ -25,10 +26,6 @@ export async function GET(
       return NextResponse.json({ message: 'Invalid token' }, { status: 401 });
     }
 
-    if (!userId) {
-      return NextResponse.json({ message: 'User ID is required' }, { status: 400 });
-    }
-
     const user = await User.findById(userId).select('-password') as IUser | null;
 
     if (!user) {
@@ -36,8 +33,7 @@ export async function GET(
     }
 
     return NextResponse.json({ user }, { status: 200 });
-
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error fetching user profile:', error);
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }

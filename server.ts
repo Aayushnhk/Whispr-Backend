@@ -1,13 +1,10 @@
-require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
-process.env.DEBUG = 'socket.io:*';
-
-import express from 'express';
 import { createServer } from 'http';
-import { Server, Socket } from 'socket.io';
+import { parse } from 'url';
+import next from 'next';
+import { Server as SocketIOServer, Socket } from 'socket.io';
 import { connect } from 'mongoose';
 import Message, { IMessage } from './models/Message';
 import User, { IUser } from './models/User';
-import cors from 'cors';
 
 declare module 'socket.io' {
   interface Socket {
@@ -106,83 +103,49 @@ interface UserSocketData {
   currentRoom: string | null;
 }
 
-const app = express();
-const httpServer = createServer(app);
+const dev = process.env.NODE_ENV !== 'production';
+const app = next({ dev });
+const handle = app.getRequestHandler();
+const port = process.env.PORT || 4001;
 
 const allowedOrigins = [
   'https://whispr-o7.vercel.app',
-  'https://whispr-backend-sarl.onrender.com',
-  'http://localhost:3000'
+  'http://localhost:3000',
 ];
 
-const io = new Server(httpServer, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ['GET', 'POST', 'OPTIONS'],
-    credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization']
-  },
-  transports: ['websocket', 'polling'],
-  allowEIO3: true
-});
+app.prepare().then(() => {
+  const server = createServer((req, res) => {
+    // Set CORS headers for HTTP requests
+    res.setHeader('Access-Control-Allow-Origin', allowedOrigins.join(','));
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200);
+      res.end();
+      return;
+    }
 
-const PORT = process.env.PORT;
-const MONGODB_URI = process.env.MONGODB_URI;
-const NEXT_PUBLIC_URL = process.env.NEXT_PUBLIC_URL || 'https://whispr-o7.vercel.app';
+    const parsedUrl = parse(req.url!, true);
+    handle(req, res, parsedUrl);
+  });
 
-if (!MONGODB_URI) {
-  console.error('MONGODB_URI is not defined');
-  process.exit(1);
-}
+  const io = new SocketIOServer(server, {
+    cors: {
+      origin: allowedOrigins,
+      methods: ['GET', 'POST', 'OPTIONS'],
+      credentials: true,
+      allowedHeaders: ['Content-Type', 'Authorization'],
+    },
+    transports: ['websocket', 'polling'],
+    allowEIO3: true,
+  });
 
-app.use(cors({
-  origin: allowedOrigins,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+  io.on('connection', (socket: Socket) => {
+    console.log(`New connection: ${socket.id}`);
+    socket.activeRooms = new Set();
 
-app.options('*', cors({ origin: allowedOrigins, credentials: true }));
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-app.use(function (req, res, next) {
-  res.header('Access-Control-Allow-Origin', allowedOrigins.join(','));
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  next();
-});
-
-const users = new Map<string, UserSocketData>();
-const usersInPublicRooms = new Map<string, Set<string>>();
-const usersInPrivateRooms = new Map<string, Set<string>>();
-const userSockets = new Map<string, Set<string>>();
-const typingUsers = new Map<string, Set<string>>();
-const globalOnlineUsers = new Map<string, OnlineUser>();
-
-const getPrivateRoomId = (userId1: string, userId2: string): string => {
-  const sortedIds = [userId1, userId2].sort();
-  return `private_${sortedIds[0]}_${sortedIds[1]}`;
-};
-
-io.use((socket: Socket, next) => {
-  const origin = socket.handshake.headers.origin;
-  if (origin && allowedOrigins.includes(origin)) {
-    socket.onAny(() => {});
-    return next();
-  }
-  return next(new Error('Origin not allowed'));
-});
-
-io.on('connection', (socket: Socket) => {
-  console.log(`New connection: ${socket.id}`);
-  socket.activeRooms = new Set();
-
-  socket.on(
-    'registerUser',
-    async (userId: string, firstName: string, lastName: string, profilePicture?: string) => {
+    socket.on('registerUser', async (userId: string, firstName: string, lastName: string, profilePicture?: string) => {
       if (!userId || userId === 'undefined' || !firstName || !lastName) {
         socket.emit('error', 'Invalid registration data: userId, firstName, and lastName are required');
         return;
@@ -224,12 +187,9 @@ io.on('connection', (socket: Socket) => {
         console.error('Error registering user:', error);
         socket.emit('error', 'Failed to verify user');
       }
-    }
-  );
+    });
 
-  socket.on(
-    'joinRoom',
-    async (room: string, userId: string, firstName: string, lastName: string) => {
+    socket.on('joinRoom', async (room: string, userId: string, firstName: string, lastName: string) => {
       if (!room || !userId || userId === 'undefined' || !firstName || !lastName) {
         socket.emit('error', 'Invalid join data: room, userId, firstName, and lastName are required');
         return;
@@ -295,7 +255,7 @@ io.on('connection', (socket: Socket) => {
       }
       usersInPublicRooms.get(room)!.add(fullName);
 
-      socket.to(room).emit('userJoined', {
+      io.to(room).emit('userJoined', {
         username: fullName,
         room,
       });
@@ -307,12 +267,9 @@ io.on('connection', (socket: Socket) => {
         io.emit('onlineUsers', Array.from(globalOnlineUsers.values()));
       }
       socket.emit('onlineUsers', Array.from(globalOnlineUsers.values()));
-    }
-  );
+    });
 
-  socket.on(
-    'joinPrivateRoom',
-    async (
+    socket.on('joinPrivateRoom', async (
       {
         senderId,
         senderFirstName,
@@ -406,12 +363,9 @@ io.on('connection', (socket: Socket) => {
       }
 
       callback({ success: true, message: 'Joined private room', room: privateRoomId, userId: senderId });
-    }
-  );
+    });
 
-  socket.on(
-    'leavePrivateRoom',
-    ({ senderId, receiverId }: { senderId: string; receiverId: string }) => {
+    socket.on('leavePrivateRoom', ({ senderId, receiverId }: { senderId: string; receiverId: string }) => {
       if (!senderId || !receiverId) {
         socket.emit('error', 'Invalid leave data');
         return;
@@ -425,12 +379,9 @@ io.on('connection', (socket: Socket) => {
           usersInPrivateRooms.get(privateRoomId)!.delete(senderId);
         }
       }
-    }
-  );
+    });
 
-  socket.on(
-    'sendMessage',
-    async ({
+    socket.on('sendMessage', async ({
       id,
       userId,
       firstName,
@@ -494,7 +445,7 @@ io.on('connection', (socket: Socket) => {
 
         if (typingUsers.has(room)) {
           typingUsers.get(room)!.delete(fullName);
-          socket.to(room).emit('userStoppedTyping', { username: fullName, room });
+          io.to(room).emit('userStoppedTyping', { username: fullName, room });
         }
 
         io.to(room).emit('receiveMessage', {
@@ -525,12 +476,9 @@ io.on('connection', (socket: Socket) => {
         console.error('Error saving message:', error);
         socket.emit('messageError', 'Failed to send message.');
       }
-    }
-  );
+    });
 
-  socket.on(
-    'privateMessage',
-    async (
+    socket.on('privateMessage', async (
       {
         id,
         senderId,
@@ -695,12 +643,9 @@ io.on('connection', (socket: Socket) => {
         console.error('Error sending private message:', error);
         callback({ success: false, error: 'Failed to send private message.' });
       }
-    }
-  );
+    });
 
-  socket.on(
-    'getPrivateMessages',
-    async ({ user1Id, user2Id }: GetPrivateMessagesArgs) => {
+    socket.on('getPrivateMessages', async ({ user1Id, user2Id }: GetPrivateMessagesArgs) => {
       if (!user1Id || !user2Id) {
         socket.emit('messageError', 'Invalid user IDs');
         return;
@@ -749,12 +694,9 @@ io.on('connection', (socket: Socket) => {
         console.error('Error fetching private messages:', error);
         socket.emit('messageError', 'Failed to fetch private messages.');
       }
-    }
-  );
+    });
 
-  socket.on(
-    'editMessage',
-    async ({ messageId, newText, userId }: EditMessageArgs) => {
+    socket.on('editMessage', async ({ messageId, newText, userId }: EditMessageArgs) => {
       try {
         const message = await Message.findById(messageId) as IMessage | null;
 
@@ -825,12 +767,9 @@ io.on('connection', (socket: Socket) => {
         console.error('Error editing message:', error);
         socket.emit('messageError', 'Failed to edit message.');
       }
-    }
-  );
+    });
 
-  socket.on(
-    'deleteMessage',
-    async ({ messageId, userId }: DeleteMessageArgs) => {
+    socket.on('deleteMessage', async ({ messageId, userId }: DeleteMessageArgs) => {
       try {
         const message = await Message.findById(messageId) as IMessage | null;
 
@@ -861,134 +800,143 @@ io.on('connection', (socket: Socket) => {
         console.error('Error deleting message:', error);
         socket.emit('messageError', 'Failed to delete message.');
       }
-    }
-  );
+    });
 
-  socket.on(
-    'typing',
-    ({ room, firstName, lastName, senderId, receiverId }: TypingArgs) => {
+    socket.on('typing', ({ room, firstName, lastName, senderId, receiverId }: TypingArgs) => {
       const fullName = `${firstName} ${lastName}`;
       if (room) {
         if (!typingUsers.has(room)) {
           typingUsers.set(room, new Set());
         }
         typingUsers.get(room)!.add(fullName);
-        socket.to(room).emit('userTyping', { username: fullName, room });
+        io.to(room).emit('userTyping', { username: fullName, room });
       } else if (senderId && receiverId) {
         const privateRoomId = getPrivateRoomId(senderId, receiverId);
         if (!typingUsers.has(privateRoomId)) {
           typingUsers.set(privateRoomId, new Set());
         }
         typingUsers.get(privateRoomId)!.add(fullName);
-        socket.to(privateRoomId).emit('userTyping', {
+        io.to(privateRoomId).emit('userTyping', {
           username: fullName,
           senderId,
           receiverId,
         });
       }
-    }
-  );
+    });
 
-  socket.on(
-    'stopTyping',
-    ({ room, firstName, lastName, senderId, receiverId }: TypingArgs) => {
+    socket.on('stopTyping', ({ room, firstName, lastName, senderId, receiverId }: TypingArgs) => {
       const fullName = `${firstName} ${lastName}`;
       if (room) {
         if (typingUsers.has(room)) {
           typingUsers.get(room)!.delete(fullName);
-          socket.to(room).emit('userStoppedTyping', { username: fullName, room });
+          io.to(room).emit('userStoppedTyping', { username: fullName, room });
         }
       } else if (senderId && receiverId) {
         const privateRoomId = getPrivateRoomId(senderId, receiverId);
         if (typingUsers.has(privateRoomId)) {
           typingUsers.get(privateRoomId)!.delete(fullName);
-          socket.to(privateRoomId).emit('userStoppedTyping', {
+          io.to(privateRoomId).emit('userStoppedTyping', {
             username: fullName,
             senderId,
             receiverId,
           });
         }
       }
-    }
-  );
-
-  socket.on('disconnect', () => {
-    console.log(`Disconnected: ${socket.id}`);
-    if (users.has(socket.id)) {
-      const { firstName, lastName, currentRoom, userId } = users.get(socket.id)!;
-      const fullName = `${firstName} ${lastName}`;
-      users.delete(socket.id);
-
-      if (currentRoom) {
-        const roomUsers = usersInPublicRooms.get(currentRoom);
-        if (roomUsers) {
-          roomUsers.delete(fullName);
-          io.to(currentRoom).emit('userLeft', {
-            username: fullName,
-            room: currentRoom,
-          });
-        }
-        if (typingUsers.has(currentRoom)) {
-          typingUsers.get(currentRoom)!.delete(fullName);
-          io.to(currentRoom).emit('userStoppedTyping', {
-            username: fullName,
-            room: currentRoom,
-          });
-        }
-      }
-    }
-
-    if (socket.userId && userSockets.has(socket.userId)) {
-      userSockets.get(socket.userId)!.delete(socket.id);
-      if (userSockets.get(socket.userId)!.size === 0) {
-        userSockets.delete(socket.userId);
-        if (socket.userId) {
-          globalOnlineUsers.delete(socket.userId);
-          io.emit('onlineUsers', Array.from(globalOnlineUsers.values()));
-        }
-      }
-      socket.activeRooms.forEach(room => {
-        socket.leave(room);
-        if (usersInPublicRooms.has(room)) {
-          usersInPublicRooms.get(room)!.delete(`${socket.firstName} ${socket.lastName}`);
-        }
-        if (usersInPrivateRooms.has(room)) {
-          usersInPrivateRooms.get(room)!.delete(socket.userId!);
-        }
-        if (typingUsers.has(room)) {
-          typingUsers.get(room)!.delete(`${socket.firstName} ${socket.lastName}`);
-          io.to(room).emit('userStoppedTyping', {
-            username: `${socket.firstName} ${socket.lastName}`,
-            room,
-          });
-        }
-      });
-    }
-  });
-});
-
-app.get('/health', (_req, res) => {
-  res.status(200).json({ status: 'healthy' });
-});
-
-connect(MONGODB_URI)
-  .then(() => {
-    console.log('Connected to MongoDB');
-    httpServer.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-      console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
     });
-  })
-  .catch((err) => {
-    console.error('MongoDB connection error:', err);
+
+    socket.on('disconnect', () => {
+      console.log(`Disconnected: ${socket.id}`);
+      if (users.has(socket.id)) {
+        const { firstName, lastName, currentRoom, userId } = users.get(socket.id)!;
+        const fullName = `${firstName} ${lastName}`;
+        users.delete(socket.id);
+
+        if (currentRoom) {
+          const roomUsers = usersInPublicRooms.get(currentRoom);
+          if (roomUsers) {
+            roomUsers.delete(fullName);
+            io.to(currentRoom).emit('userLeft', {
+              username: fullName,
+              room: currentRoom,
+            });
+          }
+          if (typingUsers.has(currentRoom)) {
+            typingUsers.get(currentRoom)!.delete(fullName);
+            io.to(currentRoom).emit('userStoppedTyping', {
+              username: fullName,
+              room: currentRoom,
+            });
+          }
+        }
+      }
+
+      if (socket.userId && userSockets.has(socket.userId)) {
+        userSockets.get(socket.userId)!.delete(socket.id);
+        if (userSockets.get(socket.userId)!.size === 0) {
+          userSockets.delete(socket.userId);
+          if (socket.userId) {
+            globalOnlineUsers.delete(socket.userId);
+            io.emit('onlineUsers', Array.from(globalOnlineUsers.values()));
+          }
+        }
+        socket.activeRooms.forEach(room => {
+          socket.leave(room);
+          if (usersInPublicRooms.has(room)) {
+            usersInPublicRooms.get(room)!.delete(`${socket.firstName} ${socket.lastName}`);
+          }
+          if (usersInPrivateRooms.has(room)) {
+            usersInPrivateRooms.get(room)!.delete(socket.userId!);
+          }
+          if (typingUsers.has(room)) {
+            typingUsers.get(room)!.delete(`${socket.firstName} ${socket.lastName}`);
+            io.to(room).emit('userStoppedTyping', {
+              username: `${socket.firstName} ${socket.lastName}`,
+              room,
+            });
+          }
+        });
+      }
+    });
+  });
+
+  const users = new Map<string, UserSocketData>();
+  const usersInPublicRooms = new Map<string, Set<string>>();
+  const usersInPrivateRooms = new Map<string, Set<string>>();
+  const userSockets = new Map<string, Set<string>>();
+  const typingUsers = new Map<string, Set<string>>();
+  const globalOnlineUsers = new Map<string, OnlineUser>();
+
+  const getPrivateRoomId = (userId1: string, userId2: string): string => {
+    const sortedIds = [userId1, userId2].sort();
+    return `private_${sortedIds[0]}_${sortedIds[1]}`;
+  };
+
+  const MONGODB_URI = process.env.MONGODB_URI;
+
+  if (!MONGODB_URI) {
+    console.error('MONGODB_URI is not defined');
+    process.exit(1);
+  }
+
+  connect(MONGODB_URI)
+    .then(() => {
+      console.log('Connected to MongoDB');
+      server.listen(port, () => {
+        console.log(`Server running on port ${port}`);
+        console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
+      });
+    })
+    .catch((err) => {
+      console.error('MongoDB connection error:', err);
+      process.exit(1);
+    });
+
+  process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled Rejection:', reason);
+  });
+
+  process.on('uncaughtException', (error: Error) => {
+    console.error('Uncaught Exception:', error);
     process.exit(1);
   });
-
-process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled Rejection:', reason);
-});
-
-process.on('uncaughtException', (error: Error) => {
-  console.error('Uncaught Exception:', error);
-  process.exit(1);
 });

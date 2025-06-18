@@ -7,7 +7,7 @@ import { Server, Socket } from 'socket.io';
 import { connect } from 'mongoose';
 import Message, { IMessage } from './models/Message';
 import User, { IUser } from './models/User';
-import cors from 'cors'; 
+import cors from 'cors';
 
 declare module 'socket.io' {
   interface Socket {
@@ -108,17 +108,22 @@ interface UserSocketData {
 
 const app = express();
 const httpServer = createServer(app);
+
+// Updated CORS configuration
+const allowedOrigins = [
+  'https://whispr-o7.vercel.app',
+  'https://whispr-backend-sarl.onrender.com',
+  'http://localhost:3000'
+];
+
 const io = new Server(httpServer, {
   cors: {
-    origin: [
-      'https://whispr-o7.vercel.app',
-      'https://whispr-backend-sarl.onrender.com',
-      'http://localhost:3000'
-    ],
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true
   },
-  transports: ['websocket', 'polling']
+  transports: ['websocket', 'polling'], 
+  allowEIO3: true
 });
 
 const PORT = process.env.PORT || 4001;
@@ -129,22 +134,26 @@ if (!MONGODB_URI) {
   console.error('MONGODB_URI is not defined');
   process.exit(1);
 }
-if (!NEXT_PUBLIC_URL) {
-  console.error('NEXT_PUBLIC_URL is not defined');
-  process.exit(1);
-}
 
+// Enhanced CORS middleware
 app.use(cors({
-  origin: [
-    'https://whispr-o7.vercel.app',
-    'https://whispr-backend-sarl.onrender.com',
-    'http://localhost:3000'
-  ],
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Add headers before the routes are defined
+app.use(function (req, res, next) {
+  res.header('Access-Control-Allow-Origin', allowedOrigins.join(','));
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  next();
+});
 
 const users = new Map<string, UserSocketData>();
 const usersInPublicRooms = new Map<string, Set<string>>();
@@ -158,12 +167,18 @@ const getPrivateRoomId = (userId1: string, userId2: string): string => {
   return `private_${sortedIds[0]}_${sortedIds[1]}`;
 };
 
+// Enhanced socket middleware
 io.use((socket: Socket, next) => {
-  socket.onAny(() => {});
-  next();
+  const origin = socket.handshake.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    socket.onAny(() => {});
+    return next();
+  }
+  return next(new Error('Origin not allowed'));
 });
 
 io.on('connection', (socket: Socket) => {
+  console.log(`New connection: ${socket.id}`);
   socket.activeRooms = new Set();
 
   socket.on(
@@ -899,6 +914,7 @@ io.on('connection', (socket: Socket) => {
   );
 
   socket.on('disconnect', () => {
+    console.log(`Disconnected: ${socket.id}`);
     if (users.has(socket.id)) {
       const { firstName, lastName, currentRoom, userId } = users.get(socket.id)!;
       const fullName = `${firstName} ${lastName}`;
@@ -952,21 +968,26 @@ io.on('connection', (socket: Socket) => {
   });
 });
 
+// Health check endpoint
+app.get('/health', (_req, res) => {
+  res.status(200).json({ status: 'healthy' });
+});
+
+// Connect to MongoDB and start server
 connect(MONGODB_URI)
   .then(() => {
+    console.log('Connected to MongoDB');
     httpServer.listen(PORT, () => {
-      console.log(`Socket.IO server running on port ${PORT}`);
+      console.log(`Server running on port ${PORT}`);
+      console.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
     });
   })
   .catch((err) => {
-    console.error('Failed to connect to MongoDB:', err);
+    console.error('MongoDB connection error:', err);
     process.exit(1);
   });
 
-app.get('/', (_req, res) => {
-  res.send(`Socket.IO server is running on port ${PORT}`);
-});
-
+// Error handling
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled Rejection:', reason);
 });

@@ -110,14 +110,20 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: [process.env.NEXT_PUBLIC_URL || 'http://localhost:4000', 'http://localhost:3000'],
+    origin: [
+      'https://whispr-o7.vercel.app',
+      'https://whispr-backend-sarl.onrender.com',
+      'http://localhost:3000'
+    ],
     methods: ['GET', 'POST'],
+    credentials: true
   },
+  transports: ['websocket', 'polling']
 });
 
-const PORT = process.env.SOCKET_SERVER_PORT || 4001;
+const PORT = process.env.PORT || 4001;
 const MONGODB_URI = process.env.MONGODB_URI;
-const NEXT_PUBLIC_URL = process.env.NEXT_PUBLIC_URL || 'http://localhost:4000';
+const NEXT_PUBLIC_URL = process.env.NEXT_PUBLIC_URL || 'https://whispr-o7.vercel.app';
 
 if (!MONGODB_URI) {
   console.error('MONGODB_URI is not defined');
@@ -128,14 +134,17 @@ if (!NEXT_PUBLIC_URL) {
   process.exit(1);
 }
 
-
 app.use(cors({
-  origin: [process.env.NEXT_PUBLIC_URL || 'http://localhost:4000', 'http://localhost:3000', 'https://whispr-backend-sarl.onrender.com'], 
-  methods: ['GET', 'POST', 'PUT', 'DELETE'], 
-  credentials: true, 
+  origin: [
+    'https://whispr-o7.vercel.app',
+    'https://whispr-backend-sarl.onrender.com',
+    'http://localhost:3000'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true,
 }));
 
-app.use(express.json()); 
+app.use(express.json());
 
 const users = new Map<string, UserSocketData>();
 const usersInPublicRooms = new Map<string, Set<string>>();

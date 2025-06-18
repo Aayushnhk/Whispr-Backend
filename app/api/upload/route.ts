@@ -1,23 +1,49 @@
-// File: src/app/api/upload/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/db/connect';
 import Message, { IMessage } from '@/models/Message';
-import User from '@/models/User';
+import User, { IUser } from '@/models/User';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
-// Import Cloudinary and configure it
 import { v2 as cloudinary } from 'cloudinary';
 
-// Configure Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Middleware to verify JWT token
-async function verifyToken(req: NextRequest) {
+interface DecodedToken {
+  id: string; // Changed from userId to id
+}
+
+interface UploadResponse {
+  message: string;
+  fileUrl: string;
+  messageDetails: {
+    id: mongoose.Types.ObjectId;
+    room?: string;
+    sender: {
+      id: mongoose.Types.ObjectId;
+      firstName: string;
+      lastName: string;
+    };
+    receiver?: {
+      id: mongoose.Types.ObjectId;
+      firstName?: string;
+      lastName?: string;
+    };
+    fileUrl?: string; // Made optional
+    fileType: IMessage['fileType'];
+    fileName?: string; // Made optional
+    chatType: IMessage['chatType'];
+    isEdited: boolean;
+    createdAt: Date;
+    replyTo?: IMessage['replyTo'];
+    isProfilePictureUpload?: boolean; // Made optional
+  };
+}
+
+async function verifyToken(req: NextRequest): Promise<{ id: string } | { error: string; status: number }> {
   const authHeader = req.headers.get('authorization');
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -26,9 +52,9 @@ async function verifyToken(req: NextRequest) {
   }
 
   try {
-    const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
-    return { userId: decoded.userId };
-  } catch (error: any) {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as DecodedToken;
+    return { id: decoded.id };
+  } catch (error) {
     console.error('Token verification failed:', error);
     return { error: 'Invalid or expired token', status: 401 };
   }
@@ -40,11 +66,11 @@ export async function POST(req: NextRequest) {
   console.log('POST /api/upload: Incoming upload request.');
 
   const authResult = await verifyToken(req);
-  if (authResult.error) {
+  if ('error' in authResult) {
     console.log(`POST /api/upload: Authentication failed - ${authResult.error}. Returning ${authResult.status}.`);
     return NextResponse.json({ message: authResult.error }, { status: authResult.status });
   }
-  const currentUserId = authResult.userId;
+  const currentUserId = authResult.id;
   console.log(`POST /api/upload: User ${currentUserId} is authenticated.`);
 
   try {
@@ -83,7 +109,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (senderId !== currentUserId) {
-      console.log(`POST /api/upload: Mismatch - senderId (${senderId}) does not match authenticated userId (${currentUserId}). Returning 403.`);
+      console.log(`POST /api/upload: Mismatch - senderId (${senderId}) does not match authenticated id (${currentUserId}). Returning 403.`);
       return NextResponse.json({ message: 'Unauthorized: Sender ID mismatch.' }, { status: 403 });
     }
 
@@ -120,10 +146,10 @@ export async function POST(req: NextRequest) {
       console.error('Cloudinary upload did not return a secure_url:', result);
       return NextResponse.json({ message: 'Failed to get file URL from Cloudinary.' }, { status: 500 });
     }
-    const fileUrl = (result as any).secure_url;
+    const fileUrl = result.secure_url as string;
     console.log(`POST /api/upload: File uploaded to Cloudinary. URL: ${fileUrl}`);
 
-    const sender = await User.findById(senderId).select('firstName lastName');
+    const sender = await User.findById(senderId).select('firstName lastName') as IUser | null;
     if (!sender) {
       console.log(`POST /api/upload: Sender user not found for ID: ${senderId}. Returning 404.`);
       return NextResponse.json({ message: 'Sender not found.' }, { status: 404 });
@@ -133,7 +159,7 @@ export async function POST(req: NextRequest) {
       sender: new mongoose.Types.ObjectId(senderId),
       firstName: sender.firstName,
       lastName: sender.lastName,
-      fileUrl: fileUrl,
+      fileUrl,
       fileType,
       fileName: fileName || file.name,
       chatType,
@@ -167,40 +193,41 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json(
-      {
-        message: 'File uploaded and message sent successfully!',
-        fileUrl,
-        messageDetails: {
-          id: newMessage._id,
-          room: newMessage.room,
-          sender: {
-            id: newMessage.sender,
-            firstName: newMessage.firstName,
-            lastName: newMessage.lastName,
-          },
-          receiver: newMessage.receiver ? {
-            id: newMessage.receiver,
-            firstName: newMessage.receiverFirstName,
-            lastName: newMessage.receiverLastName,
-          } : undefined,
-          fileUrl: newMessage.fileUrl,
-          fileType: newMessage.fileType,
-          fileName: newMessage.fileName,
-          chatType: newMessage.chatType,
-          isEdited: newMessage.isEdited,
-          createdAt: newMessage.createdAt,
-          replyTo: newMessage.replyTo,
-          isProfilePictureUpload: newMessage.isProfilePictureUpload,
+    const response: UploadResponse = {
+      message: 'File uploaded and message sent successfully!',
+      fileUrl,
+      messageDetails: {
+        id: newMessage._id,
+        room: newMessage.room,
+        sender: {
+          id: newMessage.sender,
+          firstName: newMessage.firstName,
+          lastName: newMessage.lastName,
         },
+        receiver: newMessage.receiver
+          ? {
+              id: newMessage.receiver,
+              firstName: newMessage.receiverFirstName,
+              lastName: newMessage.receiverLastName,
+            }
+          : undefined,
+        fileUrl: newMessage.fileUrl,
+        fileType: newMessage.fileType,
+        fileName: newMessage.fileName,
+        chatType: newMessage.chatType,
+        isEdited: newMessage.isEdited,
+        createdAt: newMessage.createdAt,
+        replyTo: newMessage.replyTo,
+        isProfilePictureUpload: newMessage.isProfilePictureUpload,
       },
-      { status: 200 }
-    );
+    };
+
+    return NextResponse.json(response, { status: 200 });
   } catch (error: any) {
     console.error('POST /api/upload: Server error during upload:', error);
     if (error.http_code && error.message) {
-      return NextResponse.json({ message: `Cloudinary upload failed: ${error.message}`, error: error.message }, { status: error.http_code });
+      return NextResponse.json({ message: `Cloudinary upload failed: ${error.message}` }, { status: error.http_code });
     }
-    return NextResponse.json({ message: 'Internal server error during upload', error: error.message }, { status: 500 });
+    return NextResponse.json({ message: 'Internal server error during upload' }, { status: 500 });
   }
 }

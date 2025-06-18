@@ -1,7 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/db/connect';
-import Message from '@/models/Message';
-import User from '@/models/User';
+import Message, { IMessage } from '@/models/Message';
+import mongoose from 'mongoose';
+
+interface PopulatedMessage {
+  _id: mongoose.Types.ObjectId;
+  sender: {
+    _id: mongoose.Types.ObjectId;
+    firstName: string;
+    lastName: string;
+    profilePicture?: string;
+  };
+  receiver?: mongoose.Types.ObjectId;
+  receiverFirstName?: string;
+  receiverLastName?: string;
+  text?: string;
+  chatType: 'room' | 'private';
+  room?: string;
+  createdAt: Date;
+  isEdited: boolean;
+  fileUrl?: string;
+  fileType?: IMessage['fileType'];
+  fileName?: string;
+  replyTo?: {
+    id: mongoose.Types.ObjectId;
+    sender: string;
+    text?: string;
+    fileUrl?: string;
+    fileType?: string;
+    fileName?: string;
+  };
+}
+
+interface FormattedMessage {
+  id: string;
+  senderId: string;
+  sender: string;
+  senderProfilePicture: string;
+  text?: string;
+  timestamp: string;
+  isEdited: boolean;
+  chatType: IMessage['chatType'];
+  room?: string;
+  receiverId?: string;
+  receiverUsername?: string;
+  fileUrl?: string;
+  fileType?: IMessage['fileType'];
+  fileName?: string;
+  replyTo?: {
+    id: string;
+    sender: string;
+    text?: string;
+    fileUrl?: string;
+    fileType?: string;
+    fileName?: string;
+  };
+}
 
 export async function GET(req: NextRequest) {
   await dbConnect();
@@ -14,7 +68,7 @@ export async function GET(req: NextRequest) {
     const receiverId = searchParams.get('receiverId');
     const senderId = searchParams.get('senderId');
 
-    let query: any = {};
+    const query: { room?: string; chatType?: 'room' | 'private'; $or?: Array<{ sender: string; receiver: string }> } = {};
     if (room) {
       query.room = room;
       query.chatType = 'room';
@@ -37,9 +91,9 @@ export async function GET(req: NextRequest) {
         select: 'firstName lastName profilePicture',
       })
       .select('text sender firstName lastName receiver receiverFirstName receiverLastName chatType createdAt isEdited fileUrl fileType fileName replyTo')
-      .lean();
+      .lean() as unknown as PopulatedMessage[];
 
-    const formattedMessages = messages.map((msg: any) => ({
+    const formattedMessages: FormattedMessage[] = messages.map((msg) => ({
       id: msg._id.toString(),
       senderId: msg.sender._id.toString(),
       sender: `${msg.sender.firstName} ${msg.sender.lastName}`,
@@ -54,18 +108,20 @@ export async function GET(req: NextRequest) {
       fileUrl: msg.fileUrl || undefined,
       fileType: msg.fileType || undefined,
       fileName: msg.fileName || undefined,
-      replyTo: msg.replyTo ? {
-        id: msg.replyTo.id.toString(),
-        sender: msg.replyTo.sender,
-        text: msg.replyTo.text || undefined,
-        fileUrl: msg.replyTo.fileUrl || undefined,
-        fileType: msg.replyTo.fileType || undefined,
-        fileName: msg.replyTo.fileName || undefined,
-      } : undefined,
+      replyTo: msg.replyTo
+        ? {
+            id: msg.replyTo.id.toString(),
+            sender: msg.replyTo.sender,
+            text: msg.replyTo.text || undefined,
+            fileUrl: msg.replyTo.fileUrl || undefined,
+            fileType: msg.replyTo.fileType || undefined,
+            fileName: msg.replyTo.fileName || undefined,
+          }
+        : undefined,
     }));
 
     return NextResponse.json({ messages: formattedMessages }, { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching messages:', error);
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }

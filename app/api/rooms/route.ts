@@ -1,13 +1,19 @@
-// src/app/api/rooms/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/db/connect';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
-import Room, { IRoom } from '@/models/Room';
+import Room from '@/models/Room';
 
-// Utility to verify JWT token (copied from upload/route.ts for independence)
-async function verifyToken(req: NextRequest) {
+interface DecodedToken {
+  userId: string;
+}
+
+interface RoomRequest {
+  roomName: string;
+  description?: string;
+}
+
+async function verifyToken(req: NextRequest): Promise<{ userId: string } | { error: string; status: number }> {
   const authHeader = req.headers.get('authorization');
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -16,21 +22,20 @@ async function verifyToken(req: NextRequest) {
   }
 
   try {
-    const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as DecodedToken;
     return { userId: decoded.userId };
-  } catch (error: any) {
+  } catch (error) {
     console.error('Token verification failed:', error);
     return { error: 'Invalid or expired token', status: 401 };
   }
 }
 
-// GET handler to fetch all rooms
 export async function GET(req: NextRequest) {
   await dbConnect();
   console.log('GET /api/rooms: Fetching all rooms.');
 
   const authResult = await verifyToken(req);
-  if (authResult.error) {
+  if ('error' in authResult) {
     console.log(`GET /api/rooms: Authentication failed - ${authResult.error}. Returning ${authResult.status}.`);
     return NextResponse.json({ message: authResult.error }, { status: authResult.status });
   }
@@ -43,19 +48,18 @@ export async function GET(req: NextRequest) {
       .lean();
     console.log(`GET /api/rooms: Found ${rooms.length} rooms.`);
     return NextResponse.json(rooms, { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
     console.error('GET /api/rooms: Server error during room fetch:', error);
-    return NextResponse.json({ message: 'Internal server error', error: error.message }, { status: 500 });
+    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 }
 
-// POST handler to create a new room
 export async function POST(req: NextRequest) {
   await dbConnect();
   console.log('POST /api/rooms: Incoming request to create a new room.');
 
   const authResult = await verifyToken(req);
-  if (authResult.error) {
+  if ('error' in authResult) {
     console.log(`POST /api/rooms: Authentication failed - ${authResult.error}. Returning ${authResult.status}.`);
     return NextResponse.json({ message: authResult.error }, { status: authResult.status });
   }
@@ -63,7 +67,7 @@ export async function POST(req: NextRequest) {
   console.log(`POST /api/rooms: User ${currentUserId} is authenticated.`);
 
   try {
-    const { roomName, description } = await req.json();
+    const { roomName, description }: RoomRequest = await req.json();
 
     if (!roomName || roomName.trim() === '') {
       console.log('POST /api/rooms: Room name is empty. Returning 400.');
@@ -90,8 +94,8 @@ export async function POST(req: NextRequest) {
       { message: 'Room created successfully!', room: newRoom },
       { status: 201 }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error('POST /api/rooms: Server error during room creation:', error);
-    return NextResponse.json({ message: 'Internal server error', error: error.message }, { status: 500 });
+    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 }

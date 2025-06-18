@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/db/connect';
-import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import Room, { IRoom } from '@/models/Room';
 import { uploadFileToCloudinary, deleteFileFromCloudinary, getCloudinaryResourceType } from '@/lib/cloudinary-upload';
 
-// Utility to verify JWT token
-async function verifyToken(req: NextRequest) {
+interface DecodedToken {
+  userId: string;
+  role: 'user' | 'admin';
+}
+
+async function verifyToken(req: NextRequest): Promise<{ userId: string; role: 'user' | 'admin' } | { error: string; status: number }> {
   const authHeader = req.headers.get('authorization');
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -15,15 +18,14 @@ async function verifyToken(req: NextRequest) {
   }
 
   try {
-    const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as DecodedToken;
     return { userId: decoded.userId, role: decoded.role || 'user' };
-  } catch (error: any) {
+  } catch (error) {
     console.error('Token verification failed:', error);
     return { error: 'Invalid or expired token', status: 401 };
   }
 }
 
-// Utility to get error message from unknown
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -31,30 +33,25 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
-// PUT handler to update a specific room by ID
-export async function PUT(
-  req: NextRequest,
-  context: { params: { id: string } }
-) {
+export async function PUT(req: NextRequest, context: { params: { id: string } }) {
   await dbConnect();
 
   const roomId = context.params.id;
   console.log(`PUT /api/rooms/${roomId}: Incoming request to update room.`);
 
   const authResult = await verifyToken(req);
-  if (authResult.error) {
+  if ('error' in authResult) {
     console.log(`PUT /api/rooms/${roomId}: Authentication failed - ${authResult.error}. Returning ${authResult.status}.`);
     return NextResponse.json({ message: authResult.error }, { status: authResult.status });
   }
 
-  const currentUserId = authResult.userId;
-  const currentUserRole = authResult.role;
+  const { userId: currentUserId, role: currentUserRole } = authResult;
   console.log(`PUT /api/rooms/${roomId}: User ${currentUserId} (${currentUserRole}) authenticated.`);
 
   let requestData: FormData;
   try {
     requestData = await req.formData();
-  } catch (formError: unknown) {
+  } catch (formError) {
     console.error(`PUT /api/rooms/${roomId}: Failed to parse form data:`, getErrorMessage(formError));
     return NextResponse.json({ message: 'Invalid form data in request body.' }, { status: 400 });
   }
@@ -70,7 +67,7 @@ export async function PUT(
   }
 
   try {
-    const room = await Room.findById(roomId);
+    const room = await Room.findById(roomId) as IRoom | null;
 
     if (!room) {
       console.log(`PUT /api/rooms/${roomId}: Room not found. Returning 404.`);
@@ -114,7 +111,7 @@ export async function PUT(
       roomId,
       { $set: updateFields },
       { new: true, runValidators: true }
-    ).populate('creator', 'firstName lastName profilePicture');
+    ).populate('creator', 'firstName lastName profilePicture') as IRoom | null;
 
     if (!updatedRoom) {
       console.error(`PUT /api/rooms/${roomId}: Room disappeared during update.`);
@@ -124,7 +121,7 @@ export async function PUT(
     console.log(`PUT /api/rooms/${roomId}: Room updated successfully with ID: ${updatedRoom._id}.`);
     return NextResponse.json(updatedRoom, { status: 200 });
 
-  } catch (error: unknown) {
+  } catch (error) {
     if ((error as any).name === 'CastError') {
       console.error(`PUT /api/rooms/${roomId}: Invalid Room ID format.`, error);
       return NextResponse.json({ message: 'Invalid room ID format.' }, { status: 400 });
@@ -135,32 +132,27 @@ export async function PUT(
       return NextResponse.json({ message: 'Validation Error', errors: messages }, { status: 400 });
     }
     console.error(`PUT /api/rooms/${roomId}: Server error during room update:`, getErrorMessage(error));
-    return NextResponse.json({ message: 'Internal server error', error: getErrorMessage(error) }, { status: 500 });
+    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 }
 
-// DELETE handler (unchanged)
-export async function DELETE(
-  req: NextRequest,
-  context: { params: { id: string } }
-) {
+export async function DELETE(req: NextRequest, context: { params: { id: string } }) {
   await dbConnect();
 
   const roomId = context.params.id;
   console.log(`DELETE /api/rooms/${roomId}: Incoming request to delete room.`);
 
   const authResult = await verifyToken(req);
-  if (authResult.error) {
+  if ('error' in authResult) {
     console.log(`DELETE /api/rooms/${roomId}: Authentication failed - ${authResult.error}. Returning ${authResult.status}.`);
     return NextResponse.json({ message: authResult.error }, { status: authResult.status });
   }
 
-  const currentUserId = authResult.userId;
-  const currentUserRole = authResult.role;
+  const { userId: currentUserId, role: currentUserRole } = authResult;
   console.log(`DELETE /api/rooms/${roomId}: User ${currentUserId} (${currentUserRole}) authenticated.`);
 
   try {
-    const room = await Room.findById(roomId);
+    const room = await Room.findById(roomId) as IRoom | null;
 
     if (!room) {
       console.log(`DELETE /api/rooms/${roomId}: Room not found. Returning 404.`);
@@ -184,12 +176,12 @@ export async function DELETE(
     console.log(`DELETE /api/rooms/${roomId}: Room deleted successfully.`);
     return NextResponse.json({ message: 'Room deleted successfully.' }, { status: 200 });
 
-  } catch (error: unknown) {
+  } catch (error) {
     if ((error as any).name === 'CastError') {
       console.error(`DELETE /api/rooms/${roomId}: Invalid Room ID format.`, error);
       return NextResponse.json({ message: 'Invalid room ID format.' }, { status: 400 });
     }
     console.error(`DELETE /api/rooms/${roomId}: Server error during room deletion:`, getErrorMessage(error));
-    return NextResponse.json({ message: 'Internal server error', error: getErrorMessage(error) }, { status: 500 });
+    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 }

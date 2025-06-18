@@ -5,7 +5,6 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import { connect } from 'mongoose';
-import path from 'path';
 import Message, { IMessage } from './models/Message';
 import User, { IUser } from './models/User';
 
@@ -37,14 +36,14 @@ interface PrivateMessageArgs {
   receiverLastName: string;
   text?: string;
   fileUrl?: string;
-  fileType?: 'image' | 'video' | 'audio' | 'document' | 'other';
+  fileType?: IMessage['fileType'];
   fileName?: string;
   replyTo?: {
     id: string;
     sender: string;
     text?: string;
     fileUrl?: string;
-    fileType?: 'image' | 'video' | 'audio' | 'document' | 'other';
+    fileType?: IMessage['fileType'];
     fileName?: string;
   };
 }
@@ -57,14 +56,14 @@ interface SendMessageArgs {
   text?: string;
   room: string;
   fileUrl?: string;
-  fileType?: 'image' | 'video' | 'audio' | 'document' | 'other';
+  fileType?: IMessage['fileType'];
   fileName?: string;
   replyTo?: {
     id: string;
     sender: string;
     text?: string;
     fileUrl?: string;
-    fileType?: 'image' | 'video' | 'audio' | 'document' | 'other';
+    fileType?: IMessage['fileType'];
     fileName?: string;
   };
 }
@@ -93,9 +92,21 @@ interface GetPrivateMessagesArgs {
   user2Id: string;
 }
 
+interface OnlineUser {
+  userId: string;
+  fullName: string;
+  profilePicture: string;
+}
+
+interface UserSocketData {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  currentRoom: string | null;
+}
+
 const app = express();
 const httpServer = createServer(app);
-
 const io = new Server(httpServer, {
   cors: {
     origin: [process.env.NEXT_PUBLIC_URL || 'http://localhost:4000', 'http://localhost:3000'],
@@ -108,21 +119,20 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const NEXT_PUBLIC_URL = process.env.NEXT_PUBLIC_URL || 'http://localhost:4000';
 
 if (!MONGODB_URI) {
+  console.error('MONGODB_URI is not defined');
   process.exit(1);
 }
 if (!NEXT_PUBLIC_URL) {
+  console.error('NEXT_PUBLIC_URL is not defined');
   process.exit(1);
 }
 
-const users = new Map<
-  string,
-  { userId: string; firstName: string; lastName: string; currentRoom: string | null }
->();
+const users = new Map<string, UserSocketData>();
 const usersInPublicRooms = new Map<string, Set<string>>();
 const usersInPrivateRooms = new Map<string, Set<string>>();
 const userSockets = new Map<string, Set<string>>();
 const typingUsers = new Map<string, Set<string>>();
-const globalOnlineUsers = new Map<string, { userId: string; fullName: string; profilePicture: string; }>();
+const globalOnlineUsers = new Map<string, OnlineUser>();
 
 const getPrivateRoomId = (userId1: string, userId2: string): string => {
   const sortedIds = [userId1, userId2].sort();
@@ -130,7 +140,7 @@ const getPrivateRoomId = (userId1: string, userId2: string): string => {
 };
 
 io.use((socket: Socket, next) => {
-  socket.onAny((event, ...args) => {});
+  socket.onAny(() => {});
   next();
 });
 
@@ -146,7 +156,7 @@ io.on('connection', (socket: Socket) => {
       }
 
       try {
-        const userDoc = await User.findById(userId);
+        const userDoc = await User.findById(userId) as IUser | null;
         if (!userDoc) {
           socket.emit('error', 'User not found');
           return;
@@ -155,7 +165,7 @@ io.on('connection', (socket: Socket) => {
           socket.emit('error', 'User is banned');
           return;
         }
-        if (userDoc.profilePicture === undefined || userDoc.profilePicture === null) {
+        if (!userDoc.profilePicture) {
           userDoc.profilePicture = '/default-avatar.png';
           await userDoc.save();
         }
@@ -170,7 +180,7 @@ io.on('connection', (socket: Socket) => {
         userSockets.get(userId)!.add(socket.id);
 
         const fullName = `${firstName} ${lastName}`;
-        const profilePictureValue = profilePicture || userDoc.profilePicture || '/default-avatar.png';
+        const profilePictureValue = profilePicture || userDoc.profilePicture;
 
         if (!globalOnlineUsers.has(userId)) {
           globalOnlineUsers.set(userId, { userId, fullName, profilePicture: profilePictureValue });
@@ -178,8 +188,8 @@ io.on('connection', (socket: Socket) => {
         }
         socket.emit('onlineUsers', Array.from(globalOnlineUsers.values()));
       } catch (error) {
+        console.error('Error registering user:', error);
         socket.emit('error', 'Failed to verify user');
-        return;
       }
     }
   );
@@ -193,16 +203,17 @@ io.on('connection', (socket: Socket) => {
       }
 
       try {
-        const userDoc = await User.findById(userId);
+        const userDoc = await User.findById(userId) as IUser | null;
         if (!userDoc || userDoc.banned) {
           socket.emit('error', userDoc ? 'User is banned' : 'User not found');
           return;
         }
-        if (userDoc.profilePicture === undefined || userDoc.profilePicture === null) {
+        if (!userDoc.profilePicture) {
           userDoc.profilePicture = '/default-avatar.png';
           await userDoc.save();
         }
       } catch (error) {
+        console.error('Error joining room:', error);
         socket.emit('error', 'Failed to verify user');
         return;
       }
@@ -257,7 +268,7 @@ io.on('connection', (socket: Socket) => {
       });
 
       if (!globalOnlineUsers.has(userId)) {
-        const userDoc = await User.findById(userId);
+        const userDoc = await User.findById(userId) as IUser | null;
         const profilePicture = userDoc?.profilePicture || '/default-avatar.png';
         globalOnlineUsers.set(userId, { userId, fullName, profilePicture });
         io.emit('onlineUsers', Array.from(globalOnlineUsers.values()));
@@ -285,8 +296,8 @@ io.on('connection', (socket: Socket) => {
       }
 
       try {
-        const sender = await User.findById(senderId);
-        const receiver = await User.findById(receiverId);
+        const sender = await User.findById(senderId) as IUser | null;
+        const receiver = await User.findById(receiverId) as IUser | null;
         if (!sender || !receiver) {
           callback({ success: false, error: 'User not found' });
           return;
@@ -295,15 +306,16 @@ io.on('connection', (socket: Socket) => {
           callback({ success: false, error: 'One or both users are banned' });
           return;
         }
-        if (sender.profilePicture === undefined || sender.profilePicture === null) {
+        if (!sender.profilePicture) {
           sender.profilePicture = '/default-avatar.png';
           await sender.save();
         }
-        if (receiver.profilePicture === undefined || receiver.profilePicture === null) {
+        if (!receiver.profilePicture) {
           receiver.profilePicture = '/default-avatar.png';
           await receiver.save();
         }
       } catch (error) {
+        console.error('Error joining private room:', error);
         callback({ success: false, error: 'Failed to validate users' });
         return;
       }
@@ -324,9 +336,9 @@ io.on('connection', (socket: Socket) => {
         usersInPrivateRooms.get(privateRoomId)!.add(senderId);
       }
 
-      const fetchReceiverDetails = async () => {
+      const fetchReceiverDetails = async (): Promise<{ firstName: string; lastName: string }> => {
         try {
-          const receiverUser = await User.findById(receiverId);
+          const receiverUser = await User.findById(receiverId) as IUser | null;
           if (receiverUser) {
             return {
               firstName: receiverUser.firstName,
@@ -335,38 +347,32 @@ io.on('connection', (socket: Socket) => {
           }
           return { firstName: 'Unknown', lastName: '' };
         } catch (error) {
+          console.error('Error fetching receiver details:', error);
           return { firstName: 'Unknown', lastName: '' };
         }
       };
 
-      (async () => {
-        let updatedFirstName = receiverFirstName;
-        let updatedLastName = receiverLastName;
+      const receiverDetails = await fetchReceiverDetails();
+      const updatedFirstName = receiverFirstName || receiverDetails.firstName;
+      const updatedLastName = receiverLastName || receiverDetails.lastName;
 
-        if (!receiverFirstName || !receiverLastName) {
-          const receiverDetails = await fetchReceiverDetails();
-          updatedFirstName = receiverDetails.firstName;
-          updatedLastName = receiverDetails.lastName;
-        }
-
-        const receiverFullName = `${updatedFirstName} ${updatedLastName}`;
-        const receiverSockets = userSockets.get(receiverId);
-        if (receiverSockets) {
-          receiverSockets.forEach((receiverSocketId) => {
-            const receiverSocket = io.sockets.sockets.get(receiverSocketId);
-            if (receiverSocket && !receiverSocket.activeRooms.has(privateRoomId)) {
-              receiverSocket.join(privateRoomId);
-              receiverSocket.activeRooms.add(privateRoomId);
-              if (!usersInPrivateRooms.has(privateRoomId)) {
-                usersInPrivateRooms.set(privateRoomId, new Set());
-              }
-              usersInPrivateRooms.get(privateRoomId)!.add(receiverId);
+      const receiverFullName = `${updatedFirstName} ${updatedLastName}`;
+      const receiverSockets = userSockets.get(receiverId);
+      if (receiverSockets) {
+        for (const receiverSocketId of receiverSockets) {
+          const receiverSocket = io.sockets.sockets.get(receiverSocketId);
+          if (receiverSocket && !receiverSocket.activeRooms.has(privateRoomId)) {
+            receiverSocket.join(privateRoomId);
+            receiverSocket.activeRooms.add(privateRoomId);
+            if (!usersInPrivateRooms.has(privateRoomId)) {
+              usersInPrivateRooms.set(privateRoomId, new Set());
             }
-          });
+            usersInPrivateRooms.get(privateRoomId)!.add(receiverId);
+          }
         }
+      }
 
-        callback({ success: true, message: 'Joined private room', room: privateRoomId, userId: senderId });
-      })();
+      callback({ success: true, message: 'Joined private room', room: privateRoomId, userId: senderId });
     }
   );
 
@@ -409,21 +415,22 @@ io.on('connection', (socket: Socket) => {
       }
 
       try {
-        const userDoc = await User.findById(userId);
+        const userDoc = await User.findById(userId) as IUser | null;
         if (!userDoc || userDoc.banned) {
           socket.emit('error', userDoc ? 'User is banned' : 'User not found');
           return;
         }
       } catch (error) {
+        console.error('Error sending message:', error);
         socket.emit('error', 'Failed to verify user');
         return;
       }
 
       const fullName = `${firstName} ${lastName}`;
       try {
-        let replyToData;
-        if (replyTo && replyTo.id) {
-          const repliedMessage = await Message.findById(replyTo.id);
+        let replyToData: IMessage['replyTo'] | undefined;
+        if (replyTo?.id) {
+          const repliedMessage = await Message.findById(replyTo.id) as IMessage | null;
           if (!repliedMessage) {
             socket.emit('messageError', 'Replied message not found.');
             return;
@@ -459,7 +466,7 @@ io.on('connection', (socket: Socket) => {
 
         io.to(room).emit('receiveMessage', {
           _id: newMessage._id.toString(),
-          id: id,
+          id,
           sender: fullName,
           senderId: userId,
           text: newMessage.text,
@@ -467,9 +474,9 @@ io.on('connection', (socket: Socket) => {
           room: newMessage.room,
           chatType: newMessage.chatType,
           isEdited: newMessage.isEdited || false,
-          fileUrl: newMessage.fileUrl || undefined,
-          fileType: newMessage.fileType || undefined,
-          fileName: newMessage.fileName || undefined,
+          fileUrl: newMessage.fileUrl,
+          fileType: newMessage.fileType,
+          fileName: newMessage.fileName,
           replyTo: newMessage.replyTo
             ? {
                 id: newMessage.replyTo.id.toString(),
@@ -481,7 +488,8 @@ io.on('connection', (socket: Socket) => {
               }
             : undefined,
         });
-      } catch (error: any) {
+      } catch (error) {
+        console.error('Error saving message:', error);
         socket.emit('messageError', 'Failed to send message.');
       }
     }
@@ -517,8 +525,8 @@ io.on('connection', (socket: Socket) => {
       }
 
       try {
-        const sender = await User.findById(senderId);
-        const receiver = await User.findById(receiverId);
+        const sender = await User.findById(senderId) as IUser | null;
+        const receiver = await User.findById(receiverId) as IUser | null;
         if (!sender || !receiver) {
           callback({ success: false, error: 'User not found' });
           return;
@@ -528,6 +536,7 @@ io.on('connection', (socket: Socket) => {
           return;
         }
       } catch (error) {
+        console.error('Error verifying users for private message:', error);
         callback({ success: false, error: 'Failed to verify users' });
         return;
       }
@@ -535,9 +544,9 @@ io.on('connection', (socket: Socket) => {
       const senderFullName = `${senderFirstName} ${senderLastName}`;
       const privateRoomId = getPrivateRoomId(senderId, receiverId);
 
-      const fetchReceiverDetails = async () => {
+      const fetchReceiverDetails = async (): Promise<{ firstName: string; lastName: string }> => {
         try {
-          const receiverUser = await User.findById(receiverId);
+          const receiverUser = await User.findById(receiverId) as IUser | null;
           if (receiverUser) {
             return {
               firstName: receiverUser.firstName,
@@ -546,25 +555,21 @@ io.on('connection', (socket: Socket) => {
           }
           return { firstName: 'Unknown', lastName: '' };
         } catch (error) {
+          console.error('Error fetching receiver details:', error);
           return { firstName: 'Unknown', lastName: '' };
         }
       };
 
       try {
-        let updatedFirstName = receiverFirstName;
-        let updatedLastName = receiverLastName;
-
-        if (!receiverFirstName || !receiverLastName) {
-          const receiverDetails = await fetchReceiverDetails();
-          updatedFirstName = receiverDetails.firstName;
-          updatedLastName = receiverDetails.lastName;
-        }
+        const receiverDetails = await fetchReceiverDetails();
+        const updatedFirstName = receiverFirstName || receiverDetails.firstName;
+        const updatedLastName = receiverLastName || receiverDetails.lastName;
 
         const receiverFullName = `${updatedFirstName} ${updatedLastName}`;
 
-        let replyToData;
-        if (replyTo && replyTo.id) {
-          const repliedMessage = await Message.findById(replyTo.id);
+        let replyToData: IMessage['replyTo'] | undefined;
+        if (replyTo?.id) {
+          const repliedMessage = await Message.findById(replyTo.id) as IMessage | null;
           if (!repliedMessage) {
             callback({ success: false, error: 'Replied message not found.' });
             return;
@@ -597,7 +602,7 @@ io.on('connection', (socket: Socket) => {
 
         const messageToSend = {
           _id: newMessage._id.toString(),
-          id: id,
+          id,
           senderId,
           senderUsername: senderFullName,
           text: newMessage.text,
@@ -608,9 +613,9 @@ io.on('connection', (socket: Socket) => {
           receiverFirstName: newMessage.receiverFirstName,
           receiverLastName: newMessage.receiverLastName,
           isEdited: newMessage.isEdited || false,
-          fileUrl: newMessage.fileUrl || undefined,
-          fileType: newMessage.fileType || undefined,
-          fileName: newMessage.fileName || undefined,
+          fileUrl: newMessage.fileUrl,
+          fileType: newMessage.fileType,
+          fileName: newMessage.fileName,
           replyTo: newMessage.replyTo
             ? {
                 id: newMessage.replyTo.id.toString(),
@@ -653,7 +658,8 @@ io.on('connection', (socket: Socket) => {
         }
 
         callback({ success: true, messageId: newMessage._id.toString() });
-      } catch (error: any) {
+      } catch (error) {
+        console.error('Error sending private message:', error);
         callback({ success: false, error: 'Failed to send private message.' });
       }
     }
@@ -668,13 +674,13 @@ io.on('connection', (socket: Socket) => {
       }
 
       try {
-        const privateRoomId = getPrivateRoomId(user1Id, user2Id);
         const messages = await Message.find({
           $or: [
             { sender: user1Id, receiver: user2Id, chatType: 'private' },
             { sender: user2Id, receiver: user1Id, chatType: 'private' },
           ],
-        }).lean();
+        }).lean() as IMessage[];
+
         const formattedMessages = messages.map((m) => ({
           _id: m._id.toString(),
           id: m._id.toString(),
@@ -691,9 +697,9 @@ io.on('connection', (socket: Socket) => {
           receiverLastName: m.receiverLastName,
           chatType: m.chatType,
           isEdited: m.isEdited || false,
-          fileUrl: m.fileUrl || undefined,
-          fileType: m.fileType || undefined,
-          fileName: m.fileName || undefined,
+          fileUrl: m.fileUrl,
+          fileType: m.fileType,
+          fileName: m.fileName,
           replyTo: m.replyTo
             ? {
                 id: m.replyTo.id.toString(),
@@ -706,7 +712,8 @@ io.on('connection', (socket: Socket) => {
             : undefined,
         }));
         socket.emit('historicalPrivateMessages', formattedMessages);
-      } catch (error: any) {
+      } catch (error) {
+        console.error('Error fetching private messages:', error);
         socket.emit('messageError', 'Failed to fetch private messages.');
       }
     }
@@ -716,7 +723,7 @@ io.on('connection', (socket: Socket) => {
     'editMessage',
     async ({ messageId, newText, userId }: EditMessageArgs) => {
       try {
-        const message = await Message.findById(messageId);
+        const message = await Message.findById(messageId) as IMessage | null;
 
         if (!message) {
           socket.emit('messageError', 'Message not found.');
@@ -752,14 +759,14 @@ io.on('connection', (socket: Socket) => {
           timestamp: message.createdAt.toISOString(),
           isEdited: true,
           chatType: message.chatType,
-          room: message.room || undefined,
+          room: message.room,
           receiverId: message.receiver?.toString(),
           receiverUsername: fullReceiverName,
           receiverFirstName: message.receiverFirstName,
           receiverLastName: message.receiverLastName,
-          fileUrl: message.fileUrl || undefined,
-          fileType: message.fileType || undefined,
-          fileName: message.fileName || undefined,
+          fileUrl: message.fileUrl,
+          fileType: message.fileType,
+          fileName: message.fileName,
           replyTo: message.replyTo
             ? {
                 id: message.replyTo.id.toString(),
@@ -781,7 +788,8 @@ io.on('connection', (socket: Socket) => {
           );
           io.to(privateRoomId).emit('messageEdited', updatedMessageData);
         }
-      } catch (error: any) {
+      } catch (error) {
+        console.error('Error editing message:', error);
         socket.emit('messageError', 'Failed to edit message.');
       }
     }
@@ -791,7 +799,7 @@ io.on('connection', (socket: Socket) => {
     'deleteMessage',
     async ({ messageId, userId }: DeleteMessageArgs) => {
       try {
-        const message = await Message.findById(messageId);
+        const message = await Message.findById(messageId) as IMessage | null;
 
         if (!message) {
           socket.emit('messageError', 'Message not found.');
@@ -816,7 +824,8 @@ io.on('connection', (socket: Socket) => {
           const privateRoomId = getPrivateRoomId(senderId, receiverId);
           io.to(privateRoomId).emit('messageDeleted', { messageId });
         }
-      } catch (error: any) {
+      } catch (error) {
+        console.error('Error deleting message:', error);
         socket.emit('messageError', 'Failed to delete message.');
       }
     }
@@ -926,18 +935,24 @@ io.on('connection', (socket: Socket) => {
 
 connect(MONGODB_URI)
   .then(() => {
-    httpServer.listen(PORT, () => {});
+    httpServer.listen(PORT, () => {
+      console.log(`Socket.IO server running on port ${PORT}`);
+    });
   })
   .catch((err) => {
+    console.error('Failed to connect to MongoDB:', err);
     process.exit(1);
   });
 
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.send(`Socket.IO server is running on port ${PORT}`);
 });
 
-process.on('unhandledRejection', (reason, promise) => {});
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+});
 
 process.on('uncaughtException', (error: Error) => {
+  console.error('Uncaught Exception:', error);
   process.exit(1);
 });

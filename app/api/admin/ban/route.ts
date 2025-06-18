@@ -1,7 +1,9 @@
+// app/api/admin/ban/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/db/connect';
 import User, { IUser } from '@/models/User';
 import jwt from 'jsonwebtoken';
+import { corsMiddleware, handleOptions } from '@/lib/cors';
 
 interface BanRequest {
   userId: string;
@@ -46,26 +48,33 @@ const authenticateAndAuthorize = async (req: AuthNextRequest): Promise<NextRespo
   }
 };
 
+export async function OPTIONS(req: NextRequest) {
+  return handleOptions();
+}
+
 export async function GET(req: NextRequest) {
   await dbConnect();
 
   const authResponse = await authenticateAndAuthorize(req as AuthNextRequest);
   if (authResponse) {
-    return authResponse;
+    return corsMiddleware(req, authResponse);
   }
 
   const authReq = req as AuthNextRequest;
 
   if (authReq.user?.role !== 'admin') {
-    return NextResponse.json({ message: 'Access denied: Admin role required' }, { status: 403 });
+    const response = NextResponse.json({ message: 'Access denied: Admin role required' }, { status: 403 });
+    return corsMiddleware(req, response);
   }
 
   try {
     const users = await User.find({}, 'username email role profilePicture banned firstName lastName createdAt updatedAt');
-    return NextResponse.json({ users }, { status: 200 });
+    const response = NextResponse.json({ users }, { status: 200 });
+    return corsMiddleware(req, response);
   } catch (error) {
     console.error('Error fetching users:', error);
-    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
+    const response = NextResponse.json({ message: 'Internal server error' }, { status: 500 });
+    return corsMiddleware(req, response);
   }
 }
 
@@ -74,40 +83,45 @@ export async function POST(req: NextRequest) {
 
   const authResponse = await authenticateAndAuthorize(req as AuthNextRequest);
   if (authResponse) {
-    return authResponse;
+    return corsMiddleware(req, authResponse);
   }
 
   const authReq = req as AuthNextRequest;
 
   if (authReq.user?.role !== 'admin') {
-    return NextResponse.json({ message: 'Access denied: Admin role required' }, { status: 403 });
+    const response = NextResponse.json({ message: 'Access denied: Admin role required' }, { status: 403 });
+    return corsMiddleware(req, response);
   }
 
   try {
     const { userId, role } = await req.json();
 
     if (!userId || !role) {
-      return NextResponse.json({ message: 'User ID and role are required' }, { status: 400 });
+      const response = NextResponse.json({ message: 'User ID and role are required' }, { status: 400 });
+      return corsMiddleware(req, response);
     }
 
     if (!['user', 'admin'].includes(role)) {
-      return NextResponse.json({ message: 'Invalid role specified. Must be "user" or "admin".' }, { status: 400 });
+      const response = NextResponse.json({ message: 'Invalid role specified. Must be "user" or "admin".' }, { status: 400 });
+      return corsMiddleware(req, response);
     }
 
     const userToUpdate = await User.findById(userId) as IUser | null;
 
     if (!userToUpdate) {
-      return NextResponse.json({ message: 'User not found' }, { status: 404 });
+      const response = NextResponse.json({ message: 'User not found' }, { status: 404 });
+      return corsMiddleware(req, response);
     }
 
     if (userToUpdate._id.toString() === authReq.user.id && role === 'user') {
-      return NextResponse.json({ message: "Cannot demote yourself to a regular user." }, { status: 403 });
+      const response = NextResponse.json({ message: "Cannot demote yourself to a regular user." }, { status: 403 });
+      return corsMiddleware(req, response);
     }
 
     userToUpdate.role = role;
     await userToUpdate.save();
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       message: `User ${userToUpdate.firstName} ${userToUpdate.lastName} role updated to ${role}`,
       user: {
         id: userToUpdate._id,
@@ -122,54 +136,62 @@ export async function POST(req: NextRequest) {
       },
     }, { status: 200 });
 
+    return corsMiddleware(req, response);
   } catch (error) {
     console.error('Error updating user role:', error);
-    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
+    const response = NextResponse.json({ message: 'Internal server error' }, { status: 500 });
+    return corsMiddleware(req, response);
   }
 }
 
-export async function PUT(request: NextRequest) {
+export async function PUT(req: NextRequest) {
   await dbConnect();
 
   try {
-    const authorization = request.headers.get('Authorization');
+    const authorization = req.headers.get('Authorization');
     const token = authorization?.split(' ')[1];
 
     if (!token) {
-      return NextResponse.json({ message: 'No token provided' }, { status: 401 });
+      const response = NextResponse.json({ message: 'No token provided' }, { status: 401 });
+      return corsMiddleware(req, response);
     }
 
     let decodedToken: DecodedToken;
     try {
       decodedToken = jwt.verify(token, process.env.JWT_SECRET as string) as DecodedToken;
     } catch {
-      return NextResponse.json({ message: 'Invalid token' }, { status: 401 });
+      const response = NextResponse.json({ message: 'Invalid token' }, { status: 401 });
+      return corsMiddleware(req, response);
     }
 
     if (decodedToken.role !== 'admin') {
-      return NextResponse.json({ message: 'Access denied: Not an administrator' }, { status: 403 });
+      const response = NextResponse.json({ message: 'Access denied: Not an administrator' }, { status: 403 });
+      return corsMiddleware(req, response);
     }
 
-    const { userId, bannedStatus }: BanRequest = await request.json();
+    const { userId, bannedStatus }: BanRequest = await req.json();
 
     if (!userId || typeof bannedStatus !== 'boolean') {
-      return NextResponse.json({ message: 'User ID and banned status are required' }, { status: 400 });
+      const response = NextResponse.json({ message: 'User ID and banned status are required' }, { status: 400 });
+      return corsMiddleware(req, response);
     }
 
     const userToUpdate = await User.findById(userId) as IUser | null;
 
     if (!userToUpdate) {
-      return NextResponse.json({ message: 'User not found' }, { status: 404 });
+      const response = NextResponse.json({ message: 'User not found' }, { status: 404 });
+      return corsMiddleware(req, response);
     }
 
     if (userToUpdate._id.toString() === decodedToken.id) {
-      return NextResponse.json({ message: 'You cannot change your own ban status' }, { status: 403 });
+      const response = NextResponse.json({ message: 'You cannot change your own ban status' }, { status: 403 });
+      return corsMiddleware(req, response);
     }
 
     userToUpdate.banned = bannedStatus;
     await userToUpdate.save();
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       message: `User ${userToUpdate.firstName} ${userToUpdate.lastName} has been ${bannedStatus ? 'banned' : 'unbanned'}.`,
       user: {
         _id: userToUpdate._id,
@@ -184,8 +206,10 @@ export async function PUT(request: NextRequest) {
       },
     }, { status: 200 });
 
+    return corsMiddleware(req, response);
   } catch (error) {
     console.error('Error banning/unbanning user:', error);
-    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
+    const response = NextResponse.json({ message: 'Internal server error' }, { status: 500 });
+    return corsMiddleware(req, response);
   }
 }

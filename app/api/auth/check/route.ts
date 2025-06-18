@@ -1,21 +1,29 @@
-import { NextRequest, NextResponse } from 'next/server'; // Fixed import: Added NextRequest
+// app/api/auth/check/route.ts
+import { NextRequest, NextResponse } from 'next/server';
 import User, { IUser } from '@/models/User';
 import connect from '@/lib/db/connect';
 import { verifyToken } from '@/lib/auth';
+import { corsMiddleware, handleOptions } from '@/lib/cors';
 
-export async function GET(request: NextRequest) { // Changed Request to NextRequest
+export async function OPTIONS(req: NextRequest) {
+  return handleOptions();
+}
+
+export async function GET(req: NextRequest) {
   try {
     await connect();
   } catch (dbError) {
     console.error('Database connection failed for /api/auth/check:', dbError);
-    return NextResponse.json({ message: 'Database connection error' }, { status: 500 });
+    const response = NextResponse.json({ message: 'Database connection error' }, { status: 500 });
+    return corsMiddleware(req, response);
   }
   console.log('Connected to MongoDB for /api/auth/check');
 
-  const authHeader = request.headers.get('Authorization');
+  const authHeader = req.headers.get('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     console.warn('No authorization header or invalid format.');
-    return NextResponse.json({ message: 'Unauthorized: No token provided' }, { status: 401 });
+    const response = NextResponse.json({ message: 'Unauthorized: No token provided' }, { status: 401 });
+    return corsMiddleware(req, response);
   }
 
   const token = authHeader.split(' ')[1];
@@ -24,22 +32,25 @@ export async function GET(request: NextRequest) { // Changed Request to NextRequ
 
   if (!decodedToken) {
     console.warn('Token verification failed via utility.');
-    return NextResponse.json({ message: 'Unauthorized: Invalid or expired token' }, { status: 401 });
+    const response = NextResponse.json({ message: 'Unauthorized: Invalid or expired token' }, { status: 401 });
+    return corsMiddleware(req, response);
   }
 
   const userId = decodedToken.id;
   if (!userId) {
     console.warn('Decoded token missing id.');
-    return NextResponse.json({ message: 'Unauthorized: Invalid token payload' }, { status: 401 });
+    const response = NextResponse.json({ message: 'Unauthorized: Invalid token payload' }, { status: 401 });
+    return corsMiddleware(req, response);
   }
 
   const user = await User.findById(userId).select('-password') as IUser | null;
   if (!user || user.banned) {
     console.warn('User not found or banned for provided token ID.');
-    return NextResponse.json({ message: 'Unauthorized: User not found or banned' }, { status: 401 });
+    const response = NextResponse.json({ message: 'Unauthorized: User not found or banned' }, { status: 401 });
+    return corsMiddleware(req, response);
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     message: 'Token is valid',
     user: {
       id: user._id.toString(),
@@ -51,4 +62,6 @@ export async function GET(request: NextRequest) { // Changed Request to NextRequ
       banned: user.banned,
     },
   }, { status: 200 });
+
+  return corsMiddleware(req, response);
 }

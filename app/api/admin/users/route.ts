@@ -1,7 +1,9 @@
+// app/api/admin/users/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import dbConnect from '@/lib/db/connect';
 import User, { IUser } from '@/models/User';
+import { corsMiddleware, handleOptions } from '@/lib/cors';
 
 interface AuthNextRequest extends NextRequest {
   user?: {
@@ -15,7 +17,8 @@ interface AuthNextRequest extends NextRequest {
 const authenticateAndAuthorize = async (req: AuthNextRequest): Promise<NextResponse | undefined> => {
   const authHeader = req.headers.get('authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return NextResponse.json({ message: 'Authentication required' }, { status: 401 });
+    const response = NextResponse.json({ message: 'Authentication required' }, { status: 401 });
+    return corsMiddleware(req, response);
   }
 
   const token = authHeader.split(' ')[1];
@@ -23,7 +26,8 @@ const authenticateAndAuthorize = async (req: AuthNextRequest): Promise<NextRespo
 
   if (!jwtSecret) {
     console.error('JWT_SECRET is not defined in environment variables.');
-    return NextResponse.json({ message: 'Server configuration error' }, { status: 500 });
+    const response = NextResponse.json({ message: 'Server configuration error' }, { status: 500 });
+    return corsMiddleware(req, response);
   }
 
   try {
@@ -32,9 +36,14 @@ const authenticateAndAuthorize = async (req: AuthNextRequest): Promise<NextRespo
     return undefined;
   } catch (error) {
     console.error('JWT verification failed:', error);
-    return NextResponse.json({ message: 'Invalid or expired token' }, { status: 401 });
+    const response = NextResponse.json({ message: 'Invalid or expired token' }, { status: 401 });
+    return corsMiddleware(req, response);
   }
 };
+
+export async function OPTIONS(req: NextRequest) {
+  return handleOptions();
+}
 
 export async function GET(req: NextRequest) {
   await dbConnect();
@@ -47,15 +56,18 @@ export async function GET(req: NextRequest) {
   const authReq = req as AuthNextRequest;
 
   if (authReq.user?.role !== 'admin') {
-    return NextResponse.json({ message: 'Access denied: Admin role required' }, { status: 403 });
+    const response = NextResponse.json({ message: 'Access denied: Admin role required' }, { status: 403 });
+    return corsMiddleware(req, response);
   }
 
   try {
     const users = await User.find({}, 'username email role profilePicture banned firstName lastName createdAt updatedAt');
-    return NextResponse.json({ users }, { status: 200 });
+    const response = NextResponse.json({ users }, { status: 200 });
+    return corsMiddleware(req, response);
   } catch (error) {
     console.error('Error fetching users:', error);
-    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
+    const response = NextResponse.json({ message: 'Internal server error' }, { status: 500 });
+    return corsMiddleware(req, response);
   }
 }
 
@@ -70,34 +82,39 @@ export async function POST(req: NextRequest) {
   const authReq = req as AuthNextRequest;
 
   if (authReq.user?.role !== 'admin') {
-    return NextResponse.json({ message: 'Access denied: Admin role required' }, { status: 403 });
+    const response = NextResponse.json({ message: 'Access denied: Admin role required' }, { status: 403 });
+    return corsMiddleware(req, response);
   }
 
   try {
     const { userId, role } = await req.json();
 
     if (!userId || !role) {
-      return NextResponse.json({ message: 'User ID and role are required' }, { status: 400 });
+      const response = NextResponse.json({ message: 'User ID and role are required' }, { status: 400 });
+      return corsMiddleware(req, response);
     }
 
     if (!['user', 'admin'].includes(role)) {
-      return NextResponse.json({ message: 'Invalid role specified. Must be "user" or "admin".' }, { status: 400 });
+      const response = NextResponse.json({ message: 'Invalid role specified. Must be "user" or "admin".' }, { status: 400 });
+      return corsMiddleware(req, response);
     }
 
     const userToUpdate = await User.findById(userId) as IUser | null;
 
     if (!userToUpdate) {
-      return NextResponse.json({ message: 'User not found' }, { status: 404 });
+      const response = NextResponse.json({ message: 'User not found' }, { status: 404 });
+      return corsMiddleware(req, response);
     }
 
     if ((userToUpdate._id as unknown as { toString: () => string }).toString() === authReq.user.id && role === 'user') {
-      return NextResponse.json({ message: "Cannot demote yourself to a regular user." }, { status: 403 });
+      const response = NextResponse.json({ message: "Cannot demote yourself to a regular user." }, { status: 403 });
+      return corsMiddleware(req, response);
     }
 
     userToUpdate.role = role;
     await userToUpdate.save();
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       message: `User ${userToUpdate.firstName} ${userToUpdate.lastName} role updated to ${role}`,
       user: {
         id: userToUpdate._id,
@@ -112,8 +129,10 @@ export async function POST(req: NextRequest) {
       },
     }, { status: 200 });
 
+    return corsMiddleware(req, response);
   } catch (error) {
     console.error('Error updating user role:', error);
-    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
+    const response = NextResponse.json({ message: 'Internal server error' }, { status: 500 });
+    return corsMiddleware(req, response);
   }
 }

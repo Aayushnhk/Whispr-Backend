@@ -1,8 +1,10 @@
+// app/api/users/online/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/db/connect';
 import User, { IUser } from '@/models/User';
 import mongoose from 'mongoose';
 import { verifyToken } from '@/lib/auth';
+import { corsMiddleware, handleOptions } from '@/lib/cors';
 
 interface DecodedToken {
   userId: string;
@@ -19,6 +21,10 @@ interface OnlineUserResponse {
   profilePicture: string;
 }
 
+export async function OPTIONS(req: NextRequest) {
+  return handleOptions();
+}
+
 export async function POST(req: NextRequest) {
   console.log('API/users/online: Incoming POST request.');
   await dbConnect();
@@ -28,13 +34,15 @@ export async function POST(req: NextRequest) {
 
   if (!token) {
     console.warn('API/users/online: Authentication token not provided.');
-    return NextResponse.json({ message: 'Authentication required' }, { status: 401 });
+    const response = NextResponse.json({ message: 'Authentication required' }, { status: 401 });
+    return corsMiddleware(req, response);
   }
 
   const decodedToken = verifyToken(token) as DecodedToken | null;
   if (!decodedToken || !decodedToken.userId) {
     console.warn('API/users/online: Invalid or expired token, or missing userId in token.');
-    return NextResponse.json({ message: 'Invalid or expired token' }, { status: 401 });
+    const response = NextResponse.json({ message: 'Invalid or expired token' }, { status: 401 });
+    return corsMiddleware(req, response);
   }
 
   console.log('API/users/online: Authenticated user ID:', decodedToken.userId);
@@ -44,13 +52,15 @@ export async function POST(req: NextRequest) {
 
     if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
       console.warn('API/users/online: No user IDs provided in the request body.');
-      return NextResponse.json({ message: 'User IDs are required' }, { status: 400 });
+      const response = NextResponse.json({ message: 'User IDs are required' }, { status: 400 });
+      return corsMiddleware(req, response);
     }
 
     const invalidIds = userIds.filter(id => !mongoose.Types.ObjectId.isValid(id));
     if (invalidIds.length > 0) {
       console.warn('API/users/online: Invalid MongoDB ObjectId(s) found in request:', invalidIds);
-      return NextResponse.json({ message: 'Invalid user ID format provided' }, { status: 400 });
+      const response = NextResponse.json({ message: 'Invalid user ID format provided' }, { status: 400 });
+      return corsMiddleware(req, response);
     }
 
     console.log('API/users/online: Fetching details for user IDs:', userIds);
@@ -60,7 +70,8 @@ export async function POST(req: NextRequest) {
 
     if (users.length === 0) {
       console.warn('API/users/online: No online users found for the provided IDs.');
-      return NextResponse.json({ message: 'No online users found' }, { status: 404 });
+      const response = NextResponse.json({ message: 'No online users found' }, { status: 404 });
+      return corsMiddleware(req, response);
     }
 
     console.log(`API/users/online: Successfully fetched ${users.length} online user details.`);
@@ -71,10 +82,12 @@ export async function POST(req: NextRequest) {
       profilePicture: user.profilePicture || ''
     }));
 
-    return NextResponse.json({ users: formattedUsers }, { status: 200 });
+    const response = NextResponse.json({ users: formattedUsers }, { status: 200 });
+    return corsMiddleware(req, response);
 
   } catch (error) {
     console.error('API/users/online: Error fetching online user details:', error);
-    return NextResponse.json({ message: 'Internal server error fetching online user details' }, { status: 500 });
+    const response = NextResponse.json({ message: 'Internal server error fetching online user details' }, { status: 500 });
+    return corsMiddleware(req, response);
   }
 }

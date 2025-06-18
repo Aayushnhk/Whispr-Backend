@@ -1,9 +1,11 @@
+// app/api/messages/private/[userId]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import dbConnect from '@/lib/db/connect';
 import Message, { IMessage } from '@/models/Message';
 import User, { IUser } from '@/models/User';
 import mongoose from 'mongoose';
+import { corsMiddleware, handleOptions } from '@/lib/cors';
 
 interface DecodedToken {
   id: string;
@@ -72,6 +74,10 @@ const decodeToken = (token: string): DecodedToken | null => {
   }
 };
 
+export async function OPTIONS(req: NextRequest) {
+  return handleOptions();
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ userId: string }> }) {
   const { userId } = await params;
   await dbConnect();
@@ -85,7 +91,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     if (!token) {
       console.log('GET /api/messages/private/[userId]: No token found in Authorization header. Returning 401.');
-      return NextResponse.json({ message: 'Authentication required' }, { status: 401 });
+      const response = NextResponse.json({ message: 'Authentication required' }, { status: 401 });
+      return corsMiddleware(request, response);
     }
 
     const decodedToken = decodeToken(token);
@@ -93,7 +100,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     if (!decodedToken || !decodedToken.id) {
       console.log('GET /api/messages/private/[userId]: Decoded token is invalid or missing id. Decoded:', decodedToken);
-      return NextResponse.json({ message: 'Invalid or expired token, or missing id in token' }, { status: 401 });
+      const response = NextResponse.json({ message: 'Invalid or expired token, or missing id in token' }, { status: 401 });
+      return corsMiddleware(request, response);
     }
 
     const currentUserId = new mongoose.Types.ObjectId(decodedToken.id);
@@ -105,12 +113,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     if (!userId) {
       console.log('GET /api/messages/private/[userId]: Missing other user ID from URL path. Returning 400.');
-      return NextResponse.json({ message: 'Missing other user ID from URL path' }, { status: 400 });
+      const response = NextResponse.json({ message: 'Missing other user ID from URL path' }, { status: 400 });
+      return corsMiddleware(request, response);
     }
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       console.log('GET /api/messages/private/[userId]: Invalid other user ID format. Returning 400.');
-      return NextResponse.json({ message: 'Invalid other user ID format' }, { status: 400 });
+      const response = NextResponse.json({ message: 'Invalid other user ID format' }, { status: 400 });
+      return corsMiddleware(request, response);
     }
 
     const objOtherUserId = new mongoose.Types.ObjectId(userId);
@@ -160,10 +170,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         : undefined,
     }));
 
-    return NextResponse.json({ messages: formattedMessages }, { status: 200 });
+    const response = NextResponse.json({ messages: formattedMessages }, { status: 200 });
+    return corsMiddleware(request, response);
   } catch (error) {
     console.error('GET /api/messages/private/[userId]: Server error fetching private messages:', error);
-    return NextResponse.json({ message: 'Server error fetching private messages' }, { status: 500 });
+    const response = NextResponse.json({ message: 'Server error fetching private messages' }, { status: 500 });
+    return corsMiddleware(request, response);
   }
 }
 
@@ -180,7 +192,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ use
 
     if (!token) {
       console.log('POST /api/messages/private/[userId]: No token found in Authorization header. Returning 401.');
-      return NextResponse.json({ message: 'Authentication required' }, { status: 401 });
+      const response = NextResponse.json({ message: 'Authentication required' }, { status: 401 });
+      return corsMiddleware(req, response);
     }
 
     const decodedToken = decodeToken(token);
@@ -188,7 +201,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ use
 
     if (!decodedToken?.id) {
       console.log('POST /api/messages/private/[userId]: Decoded token is invalid or missing id. Decoded:', decodedToken);
-      return NextResponse.json({ message: 'Invalid or expired token, or missing id in token' }, { status: 401 });
+      const response = NextResponse.json({ message: 'Invalid or expired token, or missing id in token' }, { status: 401 });
+      return corsMiddleware(req, response);
     }
 
     const receiverId = userId;
@@ -198,7 +212,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ use
 
     if (!text && !fileUrl) {
       console.log('POST /api/messages/private/[userId]: Message cannot be empty. Returning 400.');
-      return NextResponse.json({ message: 'Message cannot be empty' }, { status: 400 });
+      const response = NextResponse.json({ message: 'Message cannot be empty' }, { status: 400 });
+      return corsMiddleware(req, response);
     }
 
     const sender = await User.findById(decodedToken.id).select('firstName lastName email profilePicture banned') as IUser | null;
@@ -206,16 +221,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ use
 
     if (!sender) {
       console.log(`POST /api/messages/private/[userId]: Sender user not found with ID: ${decodedToken.id}. Returning 404.`);
-      return NextResponse.json({ message: 'Sender user not found' }, { status: 404 });
+      const response = NextResponse.json({ message: 'Sender user not found' }, { status: 404 });
+      return corsMiddleware(req, response);
     }
     if (!receiver) {
       console.log(`POST /api/messages/private/[userId]: Receiver user not found with ID: ${receiverId}. Returning 404.`);
-      return NextResponse.json({ message: 'Receiver user not found' }, { status: 404 });
+      const response = NextResponse.json({ message: 'Receiver user not found' }, { status: 404 });
+      return corsMiddleware(req, response);
     }
 
     if (sender.banned || receiver.banned) {
       console.log(`POST /api/messages/private/[userId]: One or both users (${sender.email} or ${receiver.email}) are banned. Returning 403.`);
-      return NextResponse.json({ message: 'One or both users are banned' }, { status: 403 });
+      const response = NextResponse.json({ message: 'One or both users are banned' }, { status: 403 });
+      return corsMiddleware(req, response);
     }
 
     const newMessage = new Message({
@@ -271,9 +289,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ use
         : undefined,
     };
 
-    return NextResponse.json({ message: formattedMessage }, { status: 201 });
+    const response = NextResponse.json({ message: formattedMessage }, { status: 201 });
+    return corsMiddleware(req, response);
   } catch (error) {
     console.error('POST /api/messages/private/[userId]: Server error sending private message:', error);
-    return NextResponse.json({ message: 'Server error sending private message' }, { status: 500 });
+    const response = NextResponse.json({ message: 'Server error sending private message' }, { status: 500 });
+    return corsMiddleware(req, response);
   }
 }

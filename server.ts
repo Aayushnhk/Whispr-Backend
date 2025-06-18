@@ -7,6 +7,7 @@ import { Server, Socket } from 'socket.io';
 import { connect } from 'mongoose';
 import Message, { IMessage } from './models/Message';
 import User, { IUser } from './models/User';
+import cors from 'cors'; 
 
 declare module 'socket.io' {
   interface Socket {
@@ -126,6 +127,15 @@ if (!NEXT_PUBLIC_URL) {
   console.error('NEXT_PUBLIC_URL is not defined');
   process.exit(1);
 }
+
+
+app.use(cors({
+  origin: [process.env.NEXT_PUBLIC_URL || 'http://localhost:4000', 'http://localhost:3000', 'https://whispr-backend-sarlorrender.com'], 
+  methods: ['GET', 'POST', 'PUT', 'DELETE'], 
+  credentials: true, 
+}));
+
+app.use(express.json()); 
 
 const users = new Map<string, UserSocketData>();
 const usersInPublicRooms = new Map<string, Set<string>>();

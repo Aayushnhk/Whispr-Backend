@@ -111,15 +111,21 @@ const port = process.env.PORT || 4001;
 const allowedOrigins = [
   'https://whispr-o7.vercel.app',
   'http://localhost:3000',
+  'https://whispr-backend-sarl.onrender.com'
 ];
 
 app.prepare().then(() => {
   const server = createServer((req, res) => {
-    // Set CORS headers for HTTP requests
-    res.setHeader('Access-Control-Allow-Origin', allowedOrigins.join(','));
+    // Enhanced CORS handling
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+    }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Max-Age', '86400');
+    
     if (req.method === 'OPTIONS') {
       res.writeHead(200);
       res.end();
@@ -133,9 +139,9 @@ app.prepare().then(() => {
   const io = new SocketIOServer(server, {
     cors: {
       origin: allowedOrigins,
-      methods: ['GET', 'POST', 'OPTIONS'],
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       credentials: true,
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     },
     transports: ['websocket', 'polling'],
     allowEIO3: true,

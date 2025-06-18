@@ -109,7 +109,6 @@ interface UserSocketData {
 const app = express();
 const httpServer = createServer(app);
 
-// Updated CORS configuration
 const allowedOrigins = [
   'https://whispr-o7.vercel.app',
   'https://whispr-backend-sarl.onrender.com',
@@ -119,14 +118,15 @@ const allowedOrigins = [
 const io = new Server(httpServer, {
   cors: {
     origin: allowedOrigins,
-    methods: ['GET', 'POST'],
-    credentials: true
+    methods: ['GET', 'POST', 'OPTIONS'],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization']
   },
-  transports: ['websocket', 'polling'], 
+  transports: ['websocket', 'polling'],
   allowEIO3: true
 });
 
-const PORT = process.env.PORT || 4001;
+const PORT = process.env.PORT;
 const MONGODB_URI = process.env.MONGODB_URI;
 const NEXT_PUBLIC_URL = process.env.NEXT_PUBLIC_URL || 'https://whispr-o7.vercel.app';
 
@@ -135,21 +135,21 @@ if (!MONGODB_URI) {
   process.exit(1);
 }
 
-// Enhanced CORS middleware
 app.use(cors({
   origin: allowedOrigins,
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
+app.options('*', cors({ origin: allowedOrigins, credentials: true }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Add headers before the routes are defined
 app.use(function (req, res, next) {
   res.header('Access-Control-Allow-Origin', allowedOrigins.join(','));
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.header('Access-Control-Allow-Credentials', 'true');
   next();
@@ -167,7 +167,6 @@ const getPrivateRoomId = (userId1: string, userId2: string): string => {
   return `private_${sortedIds[0]}_${sortedIds[1]}`;
 };
 
-// Enhanced socket middleware
 io.use((socket: Socket, next) => {
   const origin = socket.handshake.headers.origin;
   if (origin && allowedOrigins.includes(origin)) {
@@ -968,12 +967,10 @@ io.on('connection', (socket: Socket) => {
   });
 });
 
-// Health check endpoint
 app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'healthy' });
 });
 
-// Connect to MongoDB and start server
 connect(MONGODB_URI)
   .then(() => {
     console.log('Connected to MongoDB');
@@ -987,7 +984,6 @@ connect(MONGODB_URI)
     process.exit(1);
   });
 
-// Error handling
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled Rejection:', reason);
 });

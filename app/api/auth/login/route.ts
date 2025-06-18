@@ -9,6 +9,25 @@ interface LoginRequest {
   password: string;
 }
 
+export async function OPTIONS(req: NextRequest) {
+  console.log('OPTIONS /api/auth/login: Handling preflight request.');
+  const response = NextResponse.json({}, { status: 200 });
+  const allowedOrigins = ['https://whispr-o7.vercel.app', 'http://localhost:3000'];
+  const origin = req.headers.get('origin');
+  
+  if (origin && allowedOrigins.includes(origin)) {
+    response.headers.set('Access-Control-Allow-Origin', origin);
+  } else {
+    response.headers.set('Access-Control-Allow-Origin', 'https://whispr-o7.vercel.app');
+  }
+  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  response.headers.set('Access-Control-Allow-Credentials', 'true');
+  response.headers.set('Access-Control-Max-Age', '86400');
+  
+  return response;
+}
+
 export async function POST(req: NextRequest) {
   await dbConnect();
 
@@ -52,7 +71,7 @@ export async function POST(req: NextRequest) {
 
     const token = jwt.sign(
       {
-        id: user._id.toString(), // Changed from userId to id
+        id: user._id.toString(),
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
@@ -64,7 +83,7 @@ export async function POST(req: NextRequest) {
     );
     console.log('POST /api/auth/login: Token generated successfully for user:', user.email, '. Token (first 10 chars):', token.substring(0, 10) + '...');
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       message: 'Login successful',
       token,
       user: {
@@ -76,6 +95,21 @@ export async function POST(req: NextRequest) {
         role: user.role,
       },
     }, { status: 200 });
+
+    const allowedOrigins = ['https://whispr-o7.vercel.app', 'http://localhost:3000'];
+    const origin = req.headers.get('origin');
+    console.log('POST /api/auth/login: Request Origin:', origin);
+    
+    if (origin && allowedOrigins.includes(origin)) {
+      response.headers.set('Access-Control-Allow-Origin', origin);
+    } else {
+      response.headers.set('Access-Control-Allow-Origin', 'https://whispr-o7.vercel.app');
+    }
+    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    response.headers.set('Access-Control-Allow-Credentials', 'true');
+
+    return response;
   } catch (error) {
     console.error('POST /api/auth/login: Server error during login:', error);
     return NextResponse.json({ message: 'Internal server error during login' }, { status: 500 });

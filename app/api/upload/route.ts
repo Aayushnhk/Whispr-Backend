@@ -66,7 +66,7 @@ async function verifyToken(req: NextRequest): Promise<{ id: string } | { error: 
   }
 }
 
-export async function OPTIONS(_req: NextRequest) {
+export async function OPTIONS() {
   return handleOptions();
 }
 

@@ -39,7 +39,7 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
-export async function OPTIONS(_req: NextRequest) {
+export async function OPTIONS() {
   return handleOptions();
 }
 

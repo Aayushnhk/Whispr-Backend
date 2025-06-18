@@ -4,7 +4,7 @@ import connect from '@/lib/db/connect';
 import { verifyToken } from '@/lib/auth';
 import { corsMiddleware, handleOptions } from '@/lib/cors';
 
-export async function OPTIONS(_req: NextRequest) {
+export async function OPTIONS() {
   return handleOptions();
 }
 

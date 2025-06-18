@@ -40,7 +40,7 @@ const authenticateAndAuthorize = async (req: AuthNextRequest): Promise<NextRespo
   }
 };
 
-export async function OPTIONS(_req: NextRequest) {
+export async function OPTIONS() {
   return handleOptions();
 }
 

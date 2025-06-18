@@ -31,7 +31,7 @@ async function verifyToken(req: NextRequest): Promise<{ userId: string } | { err
   }
 }
 
-export async function OPTIONS(_req: NextRequest) {
+export async function OPTIONS() {
   return handleOptions();
 }
 

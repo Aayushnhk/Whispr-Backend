@@ -4,7 +4,7 @@ import dbConnect from '@/lib/db/connect';
 import User, { IUser } from '@/models/User';
 import { corsMiddleware, handleOptions } from '@/lib/cors';
 
-export async function OPTIONS(_req: NextRequest) {
+export async function OPTIONS() {
   return handleOptions();
 }
 

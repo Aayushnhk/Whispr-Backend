@@ -20,7 +20,7 @@ interface OnlineUserResponse {
   profilePicture: string;
 }
 
-export async function OPTIONS(_req: NextRequest) {
+export async function OPTIONS() {
   return handleOptions();
 }
 

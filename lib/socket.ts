@@ -8,6 +8,7 @@ export const getSocket = (): Socket => {
   if (!socket) {
     socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
+      withCredentials: true, 
     });
     console.log(`Socket.IO client initialized for ${SOCKET_URL}`);
   }

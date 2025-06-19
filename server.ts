@@ -3,8 +3,6 @@ import { parse } from "url";
 import next from "next";
 import { Server as SocketIOServer, Socket } from "socket.io";
 import { connect } from "mongoose";
-import express from "express"; // Added Express
-import cors from "cors"; // Added CORS middleware
 import Message, { IMessage } from "./models/Message";
 import User, { IUser } from "./models/User";
 
@@ -117,50 +115,11 @@ const allowedOrigins = [
 ];
 
 app.prepare().then(() => {
-  // Create Express app
-  const expressApp = express();
-
-  // Debugging middleware to log requests and responses
-  expressApp.use((req, res, next) => {
-    console.log(
-      `Request: ${req.method} ${req.url} Origin: ${req.headers.origin}`
-    );
-    res.on("finish", () => {
-      console.log(
-        `Response: ${req.method} ${req.url} Status: ${
-          res.statusCode
-        } Headers: ${JSON.stringify(res.getHeaders())}`
-      );
-    });
-    next();
-  });
-
-  // Apply CORS middleware to all routes
-  expressApp.use(
-    cors({
-      origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
-          callback(null, true);
-        } else {
-          callback(new Error("Not allowed by CORS"));
-        }
-      },
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      credentials: true,
-      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-    })
-  );
-
-  // Handle all requests with Next.js
-  expressApp.all("*", (req, res) => {
+  const server = createServer((req, res) => {
     const parsedUrl = parse(req.url!, true);
     handle(req, res, parsedUrl);
   });
 
-  // Create HTTP server
-  const server = createServer(expressApp);
-
-  // Initialize Socket.IO
   const io = new SocketIOServer(server, {
     path: "/socket.io/",
     cors: {
@@ -870,7 +829,7 @@ app.prepare().then(() => {
           const fullSenderName = `${message.firstName} ${message.lastName}`;
           const fullReceiverName =
             message.receiverFirstName && message.receiverLastName
-              ? `${message.receiverFirstName} ${message.receiverLastName}`
+              ? `${message.receiverFirstName} ${message.lastName}`
               : undefined;
 
           const updatedMessageData = {
@@ -923,6 +882,7 @@ app.prepare().then(() => {
         }
       }
     );
+
     socket.on(
       "deleteMessage",
       async ({ messageId, userId }: DeleteMessageArgs) => {

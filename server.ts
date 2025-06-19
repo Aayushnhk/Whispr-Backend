@@ -5,7 +5,6 @@ import { Server as SocketIOServer, Socket } from "socket.io";
 import { connect } from "mongoose";
 import Message, { IMessage } from "./models/Message";
 import User, { IUser } from "./models/User";
-import { OutgoingHttpHeaders, OutgoingHttpHeader } from "http";
 
 declare module "socket.io" {
   interface Socket {
@@ -117,50 +116,12 @@ const allowedOrigins = [
 
 app.prepare().then(() => {
   const server = createServer((req, res) => {
-    // Store the original writeHead function
-    const originalWriteHead = res.writeHead;
-
-    // Override writeHead to inject CORS headers before any response is sent
-    // Use `...rest: any[]` to match all possible overloads of writeHead
-    res.writeHead = ((statusCode: number, ...rest: any[]) => {
-      const origin = req.headers.origin;
-      if (origin && allowedOrigins.includes(origin)) {
-        res.setHeader("Access-Control-Allow-Origin", origin);
-      } else {
-        res.setHeader(
-          "Access-Control-Allow-Origin",
-          "https://whispr-o7.vercel.app"
-        ); // Default to frontend
-      }
-      res.setHeader(
-        "Access-Control-Allow-Methods",
-        "GET, POST, PUT, DELETE, OPTIONS"
-      );
-      res.setHeader(
-        "Access-Control-Allow-Headers",
-        "Content-Type, Authorization, X-Requested-With"
-      );
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-      res.setHeader("Access-Control-Max-Age", "86400"); // Cache preflight requests for 24 hours
-
-      // Call the original writeHead with the gathered arguments
-      // The `as any` cast is necessary here because TypeScript can't perfectly
-      // infer which overload of `writeHead` is being called with `...rest`.
-      return originalWriteHead.apply(res, [statusCode, ...rest] as any);
-    }) as typeof res.writeHead; // Cast the entire overridden function back to its original type
-
-    if (req.method === "OPTIONS") {
-      res.writeHead(204); // CORS headers are now injected by the overridden writeHead
-      res.end();
-      return;
-    }
-
     const parsedUrl = parse(req.url!, true);
     handle(req, res, parsedUrl);
   });
 
   const io = new SocketIOServer(server, {
-    path: "/socket.io/",
+    path: "/socket.io",
     cors: {
       origin: allowedOrigins,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -424,8 +385,8 @@ app.prepare().then(() => {
             )) as IUser | null;
             if (receiverUser) {
               return {
-                firstName: receiverUser.firstName || "Unknown", // Default to 'Unknown' if undefined
-                lastName: receiverUser.lastName || "", // Default to empty string if undefined
+                firstName: receiverUser.firstName || "Unknown",
+                lastName: receiverUser.lastName || "",
               };
             }
             return { firstName: "Unknown", lastName: "" };

@@ -1,4 +1,3 @@
-// lib/cors.ts
 import { NextRequest, NextResponse } from 'next/server';
 
 const allowedOrigins = ['https://whispr-o7.vercel.app', 'http://localhost:3000'];

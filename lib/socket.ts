@@ -1,13 +1,13 @@
 import io, { Socket } from 'socket.io-client';
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'https://whispr-backend-sarl.onrender.com';
 
 let socket: Socket | null = null;
 
 export const getSocket = (): Socket => {
   if (!socket) {
     socket = io(SOCKET_URL, {
-      path: "/socket.io/", 
+      path: "/socket.io/",
       transports: ['websocket', 'polling'],
       withCredentials: true,
     });

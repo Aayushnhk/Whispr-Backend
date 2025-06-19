@@ -120,11 +120,12 @@ app.prepare().then(() => {
     const parsedUrl = parse(req.url!, true);
     handle(req, res, parsedUrl);
   });
-  // Removed the duplicate 'allowedOrigins' declaration here
+  // This line was removed to fix the CORS issue by allowing the global allowedOrigins to be used.
+  // const allowedOrigins = ["http://localhost:4000", "https://whispr-o7.vercel.app",]; 
   const io = new SocketIOServer(server, {
     path: "/socket.io/",
     cors: {
-      origin: allowedOrigins, // This now correctly uses the broader 'allowedOrigins' array
+      origin: allowedOrigins, // Now correctly uses the 'allowedOrigins' defined globally
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       credentials: true,
       allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],

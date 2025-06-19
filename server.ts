@@ -112,6 +112,7 @@ const allowedOrigins = [
   "https://whispr-o7.vercel.app",
   "https://whispr-backend-sarl.onrender.com",
   "http://localhost:3000",
+  "http://localhost:4000",
 ];
 
 app.prepare().then(() => {
@@ -119,11 +120,11 @@ app.prepare().then(() => {
     const parsedUrl = parse(req.url!, true);
     handle(req, res, parsedUrl);
   });
-
+  // Removed the duplicate 'allowedOrigins' declaration here
   const io = new SocketIOServer(server, {
     path: "/socket.io/",
     cors: {
-      origin: allowedOrigins,
+      origin: allowedOrigins, // This now correctly uses the broader 'allowedOrigins' array
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       credentials: true,
       allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
@@ -131,7 +132,6 @@ app.prepare().then(() => {
     transports: ["websocket", "polling"],
     allowEIO3: true,
   });
-
   const users = new Map<string, UserSocketData>();
   const usersInPublicRooms = new Map<string, Set<string>>();
   const usersInPrivateRooms = new Map<string, Set<string>>();

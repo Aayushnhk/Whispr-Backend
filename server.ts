@@ -121,7 +121,7 @@ app.prepare().then(() => {
   });
 
   const io = new SocketIOServer(server, {
-    path: "/socket.io",
+    path: "/socket.io/",
     cors: {
       origin: allowedOrigins,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],

@@ -1,3 +1,4 @@
+// server.ts
 import { createServer } from "http";
 import { parse } from "url";
 import next from "next";
@@ -5,6 +6,7 @@ import { Server as SocketIOServer, Socket } from "socket.io";
 import { connect } from "mongoose";
 import Message, { IMessage } from "./models/Message";
 import User, { IUser } from "./models/User";
+import { OutgoingHttpHeaders, OutgoingHttpHeader } from "http";
 
 declare module "socket.io" {
   interface Socket {
@@ -110,34 +112,46 @@ const port = process.env.PORT || 10000;
 
 const allowedOrigins = [
   "https://whispr-o7.vercel.app",
-  "https://whispr-backend-sarl.onrender.com", // Added Render backend URL
+  "https://whispr-backend-sarl.onrender.com",
   "http://localhost:3000",
 ];
 
 app.prepare().then(() => {
   const server = createServer((req, res) => {
-    const origin = req.headers.origin;
-    if (origin && allowedOrigins.includes(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-    } else {
+    // Store the original writeHead function
+    const originalWriteHead = res.writeHead;
+
+    // Override writeHead to inject CORS headers before any response is sent
+    // Use `...rest: any[]` to match all possible overloads of writeHead
+    res.writeHead = ((statusCode: number, ...rest: any[]) => {
+      const origin = req.headers.origin;
+      if (origin && allowedOrigins.includes(origin)) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+      } else {
+        res.setHeader(
+          "Access-Control-Allow-Origin",
+          "https://whispr-o7.vercel.app"
+        ); // Default to frontend
+      }
       res.setHeader(
-        "Access-Control-Allow-Origin",
-        "https://whispr-o7.vercel.app"
-      ); // Default to frontend
-    }
-    res.setHeader(
-      "Access-Control-Allow-Methods",
-      "GET, POST, PUT, DELETE, OPTIONS"
-    );
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, X-Requested-With"
-    );
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader("Access-Control-Max-Age", "86400");
+        "Access-Control-Allow-Methods",
+        "GET, POST, PUT, DELETE, OPTIONS"
+      );
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization, X-Requested-With"
+      );
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+      res.setHeader("Access-Control-Max-Age", "86400"); // Cache preflight requests for 24 hours
+
+      // Call the original writeHead with the gathered arguments
+      // The `as any` cast is necessary here because TypeScript can't perfectly
+      // infer which overload of `writeHead` is being called with `...rest`.
+      return originalWriteHead.apply(res, [statusCode, ...rest] as any);
+    }) as typeof res.writeHead; // Cast the entire overridden function back to its original type
 
     if (req.method === "OPTIONS") {
-      res.writeHead(204);
+      res.writeHead(204); // CORS headers are now injected by the overridden writeHead
       res.end();
       return;
     }
@@ -147,9 +161,9 @@ app.prepare().then(() => {
   });
 
   const io = new SocketIOServer(server, {
-    path: "/socket.io/", // Match frontend path
+    path: "/socket.io/",
     cors: {
-      origin: allowedOrigins, // Use array of allowed origins
+      origin: allowedOrigins,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       credentials: true,
       allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
@@ -157,6 +171,18 @@ app.prepare().then(() => {
     transports: ["websocket", "polling"],
     allowEIO3: true,
   });
+
+  const users = new Map<string, UserSocketData>();
+  const usersInPublicRooms = new Map<string, Set<string>>();
+  const usersInPrivateRooms = new Map<string, Set<string>>();
+  const userSockets = new Map<string, Set<string>>();
+  const typingUsers = new Map<string, Set<string>>();
+  const globalOnlineUsers = new Map<string, OnlineUser>();
+
+  const getPrivateRoomId = (userId1: string, userId2: string): string => {
+    const sortedIds = [userId1, userId2].sort();
+    return `private_${sortedIds[0]}_${sortedIds[1]}`;
+  };
 
   io.on("connection", (socket: Socket) => {
     console.log(`New connection: ${socket.id}`);
@@ -1046,18 +1072,6 @@ app.prepare().then(() => {
       }
     });
   });
-
-  const users = new Map<string, UserSocketData>();
-  const usersInPublicRooms = new Map<string, Set<string>>();
-  const usersInPrivateRooms = new Map<string, Set<string>>();
-  const userSockets = new Map<string, Set<string>>();
-  const typingUsers = new Map<string, Set<string>>();
-  const globalOnlineUsers = new Map<string, OnlineUser>();
-
-  const getPrivateRoomId = (userId1: string, userId2: string): string => {
-    const sortedIds = [userId1, userId2].sort();
-    return `private_${sortedIds[0]}_${sortedIds[1]}`;
-  };
 
   const MONGODB_URI = process.env.MONGODB_URI;
 

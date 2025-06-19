@@ -7,7 +7,7 @@ let socket: Socket | null = null;
 export const getSocket = (): Socket => {
   if (!socket) {
     socket = io(SOCKET_URL, {
-      path: "/socket.io/",
+      path: "/socket.io",
       transports: ['websocket', 'polling'],
       withCredentials: true,
     });

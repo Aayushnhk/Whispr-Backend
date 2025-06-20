@@ -110,7 +110,7 @@ const port = process.env.PORT || 10000;
 
 const allowedOrigins = [
   "https://whispr-o7.vercel.app",
-  "https://whispr-backend-sarl.onrender.com",
+  "whispr-backend-production-b02e.up.railway.app",
   "http://localhost:3000",
   "http://localhost:4000",
 ];
@@ -120,15 +120,11 @@ app.prepare().then(() => {
     const parsedUrl = parse(req.url!, true);
     handle(req, res, parsedUrl);
   });
-  // REMOVE THIS DUPLICATE DECLARATION:
-  // const allowedOrigins = [
-  //   "http://localhost:4000",
-  //   "https://whispr-o7.vercel.app",
-  // ];
+
   const io = new SocketIOServer(server, {
     path: "/socket.io/",
     cors: {
-      origin: allowedOrigins, // This will now correctly use the global 'allowedOrigins'
+      origin: allowedOrigins,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       credentials: true,
       allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],

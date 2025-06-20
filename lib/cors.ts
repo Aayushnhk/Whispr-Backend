@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const allowedOrigins = ['https://whispr-o7.vercel.app', 'http://localhost:3000'];
+const allowedOrigins = ['https://whispr-o7.vercel.app', 'http://localhost:4000'];
 
 export function corsMiddleware(req: NextRequest, response: NextResponse = NextResponse.next()) {
   const origin = req.headers.get('origin');

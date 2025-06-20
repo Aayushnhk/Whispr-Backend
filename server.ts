@@ -130,7 +130,6 @@ app.prepare().then(() => {
       allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     },
     transports: ["websocket", "polling"],
-    allowEIO3: true,
   });
   const users = new Map<string, UserSocketData>();
   const usersInPublicRooms = new Map<string, Set<string>>();

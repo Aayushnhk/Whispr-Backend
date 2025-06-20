@@ -5,9 +5,9 @@
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
-    "noEmit": true,
+
     "esModuleInterop": true,
-    "downlevelIteration": true, // <--- Added this line
+    "downlevelIteration": true,
     "module": "esnext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,

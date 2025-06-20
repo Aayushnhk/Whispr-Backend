@@ -110,7 +110,7 @@ const port = process.env.PORT || 10000;
 
 const allowedOrigins = [
   "https://whispr-o7.vercel.app",
-  "whispr-backend-production-b02e.up.railway.app",
+  "https://whispr-backend-sarl.onrender.com",
   "http://localhost:3000",
   "http://localhost:4000",
 ];

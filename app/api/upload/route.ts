@@ -7,11 +7,19 @@ import mongoose from 'mongoose';
 import { v2 as cloudinary } from 'cloudinary';
 import { corsMiddleware, handleOptions } from '@/lib/cors';
 
+// Cloudinary configuration with validation
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
+if (!process.env.CLOUDINARY_CLOUD_NAME || 
+    !process.env.CLOUDINARY_API_KEY || 
+    !process.env.CLOUDINARY_API_SECRET) {
+  console.error('Cloudinary config missing!');
+  throw new Error('Cloudinary configuration is incomplete');
+}
 
 interface DecodedToken {
   id: string;
@@ -106,6 +114,16 @@ export async function POST(_req: NextRequest) {
       return corsMiddleware(_req, response);
     }
 
+    
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; 
+    if (file.size > MAX_FILE_SIZE) {
+      const response = NextResponse.json(
+        { message: 'File size exceeds 10MB limit' },
+        { status: 413 }
+      );
+      return corsMiddleware(_req, response);
+    }
+
     if (!senderId || !fileType || !chatType) {
       console.log('POST /api/upload: Missing senderId, fileType, or chatType. Returning 400.');
       const response = NextResponse.json({ message: 'Missing senderId, fileType, or chatType.' }, { status: 400 });
@@ -194,7 +212,6 @@ export async function POST(_req: NextRequest) {
     }
 
     const newMessage = new Message(newMessageData);
-
     await newMessage.save();
     console.log('POST /api/upload: Message saved to DB successfully.');
 
@@ -244,11 +261,27 @@ export async function POST(_req: NextRequest) {
     return corsMiddleware(_req, nextResponse);
   } catch (error: unknown) {
     console.error('POST /api/upload: Server error during upload:', error);
-    if (typeof error === 'object' && error !== null && 'http_code' in error && 'message' in error) {
-      const response = NextResponse.json({ message: `Cloudinary upload failed: ${(error as CloudinaryError).message}` }, { status: (error as CloudinaryError).http_code });
-      return corsMiddleware(_req, response);
+    
+    let status = 500;
+    let message = 'Internal server error during upload';
+    
+    if (typeof error === 'object' && error !== null) {
+      if ('http_code' in error) {
+        status = (error as CloudinaryError).http_code || 500;
+        message = `Cloudinary upload failed: ${(error as CloudinaryError).message}`;
+      } else if ('message' in error) {
+        message = (error as { message: string }).message;
+      }
     }
-    const response = NextResponse.json({ message: 'Internal server error during upload' }, { status: 500 });
+
+    const response = NextResponse.json(
+      { 
+        message,
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      }, 
+      { status }
+    );
+    response.headers.set('Content-Type', 'application/json');
     return corsMiddleware(_req, response);
   }
 }

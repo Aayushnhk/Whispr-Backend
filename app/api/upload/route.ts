@@ -32,6 +32,10 @@ interface CloudinaryError {
   message: string;
 }
 
+interface CloudinaryUploadResult {
+  secure_url: string;
+}
+
 interface UploadResponse {
   success: boolean;
   message: string;
@@ -140,7 +144,7 @@ export async function POST(_req: NextRequest) {
       return corsMiddleware(_req, response);
     }
 
-    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
       const response = NextResponse.json(
         { success: false, message: "File size exceeds 50MB limit" },
@@ -225,8 +229,12 @@ export async function POST(_req: NextRequest) {
                 ? "chat_app_profile_pictures"
                 : "chat_app_messages",
               resource_type: resourceType,
+              upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET, // This line was added/confirmed
             },
-            (error, result) => {
+            (
+              error: CloudinaryError | undefined,
+              result: CloudinaryUploadResult | undefined
+            ) => {
               if (error) {
                 if (
                   typeof error === "string" &&
@@ -307,7 +315,6 @@ export async function POST(_req: NextRequest) {
     await newMessage.save();
     console.log("POST /api/upload: Message saved to DB successfully.");
 
-    // Update profile picture if needed
     if (isProfilePictureUpload) {
       try {
         await User.findByIdAndUpdate(

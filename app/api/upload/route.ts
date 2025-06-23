@@ -6,7 +6,7 @@ import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { v2 as cloudinary } from "cloudinary";
 import { corsMiddleware, handleOptions } from "@/lib/cors";
-import stream from 'stream';
+import stream, { Readable } from 'stream';
 import { promisify } from 'util';
 
 const pipeline = promisify(stream.pipeline);
@@ -245,8 +245,8 @@ export async function POST(_req: NextRequest) {
             resolve(result);
           }
         );
-        const nodeStream = require('stream').Readable.fromWeb
-          ? require('stream').Readable.fromWeb(fileStream)
+        const nodeStream = Readable.fromWeb
+          ? Readable.fromWeb(fileStream)
           : (fileStream as unknown as NodeJS.ReadableStream);
         pipeline(nodeStream, uploadStream).catch(reject);
       }

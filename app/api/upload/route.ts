@@ -6,8 +6,11 @@ import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { v2 as cloudinary } from "cloudinary";
 import { corsMiddleware, handleOptions } from "@/lib/cors";
+import stream from 'stream';
+import { promisify } from 'util';
 
-// Configure Cloudinary with validation
+const pipeline = promisify(stream.pipeline);
+
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -19,7 +22,6 @@ if (
   !process.env.CLOUDINARY_API_KEY ||
   !process.env.CLOUDINARY_API_SECRET
 ) {
-  console.error("Cloudinary configuration is missing!");
   throw new Error("Cloudinary environment variables not configured");
 }
 
@@ -134,7 +136,6 @@ export async function POST(_req: NextRequest) {
       }, senderId: ${senderId}, fileType: ${fileType}, chatType: ${chatType}, isProfilePictureUpload: ${isProfilePictureUpload}`
     );
 
-    // Validation checks
     if (!file) {
       console.log("POST /api/upload: No file uploaded. Returning 400.");
       const response = NextResponse.json(
@@ -200,8 +201,7 @@ export async function POST(_req: NextRequest) {
       return corsMiddleware(_req, response);
     }
 
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    const fileStream = file.stream();
 
     let resourceType: "image" | "video" | "raw";
     if (file.type.startsWith("image/")) {
@@ -219,46 +219,41 @@ export async function POST(_req: NextRequest) {
       `POST /api/upload: Uploading file to Cloudinary (resource_type: ${resourceType}).`
     );
 
-    const uploadTimeout = 30000; // 30 seconds timeout
-    const result = await Promise.race([
-      new Promise((resolve, reject) => {
-        cloudinary.uploader
-          .upload_stream(
-            {
-              folder: isProfilePictureUpload
-                ? "chat_app_profile_pictures"
-                : "chat_app_messages",
-              resource_type: resourceType,
-              upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET, // This line was added/confirmed
-            },
-            (
-              error: CloudinaryError | undefined,
-              result: CloudinaryUploadResult | undefined
-            ) => {
-              if (error) {
-                if (
-                  typeof error === "string" &&
-                  (error as string).startsWith("<!DOCTYPE")
-                ) {
-                  return reject({
-                    message:
-                      "Cloudinary upload failed: Invalid server response",
-                    http_code: 500,
-                  });
-                }
-                console.error("Cloudinary upload error:", error);
-                return reject(error);
-              }
-              resolve(result);
+    const uploadPromise = new Promise<CloudinaryUploadResult>(
+      (resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder: isProfilePictureUpload
+              ? "chat_app_profile_pictures"
+              : "chat_app_messages",
+            resource_type: resourceType,
+            upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET,
+          },
+          (
+            error: CloudinaryError | undefined,
+            result: CloudinaryUploadResult | undefined
+          ) => {
+            if (error) {
+              console.error("Cloudinary upload error:", error);
+              return reject(error);
             }
-          )
-          .end(buffer);
-      }),
+            if (!result || !result.secure_url) {
+              return reject(
+                new Error("Cloudinary upload did not return a secure_url.")
+              );
+            }
+            resolve(result);
+          }
+        );
+        pipeline(fileStream as any, uploadStream).catch(reject);
+      }
+    );
+
+    const uploadTimeout = 30000;
+    const result = await Promise.race([
+      uploadPromise,
       new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error("Upload timeout exceeded")),
-          uploadTimeout
-        )
+        setTimeout(() => reject(new Error("Upload timeout exceeded")), uploadTimeout)
       ),
     ]);
 
@@ -288,7 +283,6 @@ export async function POST(_req: NextRequest) {
       return corsMiddleware(_req, response);
     }
 
-    // Prepare and save message
     const newMessageData: Partial<IMessage> = {
       sender: new mongoose.Types.ObjectId(senderId),
       firstName: sender.firstName,
@@ -333,7 +327,6 @@ export async function POST(_req: NextRequest) {
       }
     }
 
-    // Successful response
     const response: UploadResponse = {
       success: true,
       message: "File uploaded and message sent successfully!",

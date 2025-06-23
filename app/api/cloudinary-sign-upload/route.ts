@@ -67,14 +67,19 @@ export async function POST(_req: NextRequest) {
   }
 
   const currentUserId = authResult.id;
-  console.log(`POST /api/upload (Signature Endpoint): User ${currentUserId} is authenticated.`);
+  console.log(
+    `POST /api/upload (Signature Endpoint): User ${currentUserId} is authenticated.`
+  );
 
   try {
     // Expect parameters from the client needed for signature generation
-    const { folder, public_id, resource_type, upload_preset } = await _req.json();
+    const { folder, public_id, resource_type, upload_preset } =
+      await _req.json();
 
     if (!upload_preset) {
-      console.log("POST /api/upload (Signature Endpoint): Missing upload_preset. Returning 400.");
+      console.log(
+        "POST /api/upload (Signature Endpoint): Missing upload_preset. Returning 400."
+      );
       const response = NextResponse.json(
         { success: false, message: "Upload preset is required." },
         { status: 400 }
@@ -87,7 +92,7 @@ export async function POST(_req: NextRequest) {
       timestamp,
       upload_preset,
       // Default to 'image' if resource_type is not explicitly provided by client
-      resource_type: resource_type || 'image',
+      resource_type: resource_type || "image",
     };
 
     if (folder) {
@@ -95,7 +100,7 @@ export async function POST(_req: NextRequest) {
     }
     // Allow the client to suggest a public_id for finer control, or let Cloudinary generate one
     if (public_id) {
-        params.public_id = public_id;
+      params.public_id = public_id;
     }
 
     // Generate the Cloudinary signature
@@ -105,28 +110,40 @@ export async function POST(_req: NextRequest) {
     );
 
     // Return the necessary details for the client to perform direct upload
-    const response = NextResponse.json({
-      success: true,
-      signature,
-      timestamp,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET,
-      folder: folder, // Echo back the requested folder
-      public_id: public_id, // Echo back the requested public_id
-      resource_type: resource_type, // Echo back the requested resource_type
-    }, { status: 200 });
-
-    console.log("POST /api/upload (Signature Endpoint): Signature generated successfully.");
-    return corsMiddleware(_req, response);
-
-  } catch (error: any) {
-    console.error("POST /api/upload (Signature Endpoint): Server error during signature generation:", error);
     const response = NextResponse.json(
-      { success: false, message: error.message || "Failed to generate Cloudinary signature." },
+      {
+        success: true,
+        signature,
+        timestamp,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET,
+        folder: folder, // Echo back the requested folder
+        public_id: public_id, // Echo back the requested public_id
+        resource_type: resource_type, // Echo back the requested resource_type
+      },
+      { status: 200 }
+    );
+
+    console.log(
+      "POST /api/upload (Signature Endpoint): Signature generated successfully."
+    );
+    return corsMiddleware(_req, response);
+  } catch (error) {
+    let errorMessage = "Failed to generate Cloudinary signature.";
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else if (typeof error === "string") {
+      errorMessage = error;
+    }
+    console.error(
+      "POST /api/upload (Signature Endpoint): Server error during signature generation:",
+      error
+    );
+    const response = NextResponse.json(
+      { success: false, message: errorMessage },
       { status: 500 }
     );
     return corsMiddleware(_req, response);
   }
 }
-

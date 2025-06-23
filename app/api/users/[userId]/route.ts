@@ -1,11 +1,13 @@
+// WHISPR-BACKEND/app/api/users/[userId]/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import connect from '@/lib/db/connect';
 import User, { IUser } from '@/models/User';
-import { verifyToken } from '@/lib/auth';
+import { verifyToken } from '@/lib/auth'; // Assuming verifyToken returns a payload with 'id'
 import { corsMiddleware, handleOptions } from '@/lib/cors';
 
 interface DecodedToken {
-  userId: string;
+  id: string; // FIX: Changed from 'userId' to 'id' to match JWT payload
 }
 
 export async function OPTIONS() {
@@ -29,10 +31,18 @@ export async function GET(_req: NextRequest) {
       return corsMiddleware(_req, response);
     }
     const decoded = verifyToken(token) as DecodedToken | null;
+    // FIX: The check below for !decoded implies that if decoded is null, it's invalid.
+    // If you had a check like `!decoded.userId`, that would also need to change to `!decoded.id`.
     if (!decoded) {
       const response = NextResponse.json({ message: 'Invalid token' }, { status: 401 });
       return corsMiddleware(_req, response);
     }
+
+    // Optional but recommended: Verify the user making the request is authorized to view this profile
+    // if (decoded.id !== userId) {
+    //   const response = NextResponse.json({ message: 'Unauthorized access' }, { status: 403 });
+    //   return corsMiddleware(_req, response);
+    // }
 
     const user = await User.findById(userId).select('-password') as IUser | null;
 

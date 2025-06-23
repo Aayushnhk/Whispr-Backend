@@ -6,10 +6,6 @@ import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { v2 as cloudinary } from "cloudinary";
 import { corsMiddleware, handleOptions } from "@/lib/cors";
-import stream, { Readable } from 'stream';
-import { promisify } from 'util';
-
-const pipeline = promisify(stream.pipeline);
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -201,7 +197,8 @@ export async function POST(_req: NextRequest) {
       return corsMiddleware(_req, response);
     }
 
-    const fileStream = file.stream();
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
 
     let resourceType: "image" | "video" | "raw";
     if (file.type.startsWith("image/")) {
@@ -219,9 +216,10 @@ export async function POST(_req: NextRequest) {
       `POST /api/upload: Uploading file to Cloudinary (resource_type: ${resourceType}).`
     );
 
-    const uploadPromise = new Promise<CloudinaryUploadResult>(
-      (resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
+    const uploadTimeout = 30000;
+    const result = await Promise.race([
+      new Promise<CloudinaryUploadResult>((resolve, reject) => {
+        cloudinary.uploader.upload_stream(
           {
             folder: isProfilePictureUpload
               ? "chat_app_profile_pictures"
@@ -244,17 +242,8 @@ export async function POST(_req: NextRequest) {
             }
             resolve(result);
           }
-        );
-        const nodeStream = Readable.fromWeb
-          ? Readable.fromWeb(fileStream)
-          : (fileStream as unknown as NodeJS.ReadableStream);
-        pipeline(nodeStream, uploadStream).catch(reject);
-      }
-    );
-
-    const uploadTimeout = 30000;
-    const result = await Promise.race([
-      uploadPromise,
+        ).end(buffer);
+      }),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Upload timeout exceeded")), uploadTimeout)
       ),

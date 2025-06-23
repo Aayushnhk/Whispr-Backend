@@ -37,7 +37,9 @@ export async function OPTIONS() {
 
 export async function POST(_req: NextRequest) {
   await dbConnect();
-  console.log("POST /api/update-profile-picture: Incoming request to update profile picture.");
+  console.log(
+    "POST /api/update-profile-picture: Incoming request to update profile picture."
+  );
 
   const authResult = await verifyToken(_req);
   if ("error" in authResult) {
@@ -52,13 +54,17 @@ export async function POST(_req: NextRequest) {
   }
 
   const currentUserId = authResult.id;
-  console.log(`POST /api/update-profile-picture: User ${currentUserId} is authenticated.`);
+  console.log(
+    `POST /api/update-profile-picture: User ${currentUserId} is authenticated.`
+  );
 
   try {
     const { userId, profilePictureUrl } = await _req.json();
 
     if (!userId || !profilePictureUrl) {
-      console.log("POST /api/update-profile-picture: Missing userId or profilePictureUrl. Returning 400.");
+      console.log(
+        "POST /api/update-profile-picture: Missing userId or profilePictureUrl. Returning 400."
+      );
       const response = NextResponse.json(
         { success: false, message: "Missing userId or profilePictureUrl." },
         { status: 400 }
@@ -67,9 +73,15 @@ export async function POST(_req: NextRequest) {
     }
 
     if (userId !== currentUserId) {
-      console.log(`POST /api/update-profile-picture: Unauthorized access - tried to update ${userId} from ${currentUserId}. Returning 403.`);
+      console.log(
+        `POST /api/update-profile-picture: Unauthorized access - tried to update ${userId} from ${currentUserId}. Returning 403.`
+      );
       const response = NextResponse.json(
-        { success: false, message: "Unauthorized: You can only update your own profile picture." },
+        {
+          success: false,
+          message:
+            "Unauthorized: You can only update your own profile picture.",
+        },
         { status: 403 }
       );
       return corsMiddleware(_req, response);
@@ -82,7 +94,9 @@ export async function POST(_req: NextRequest) {
     );
 
     if (!updatedUser) {
-      console.log(`POST /api/update-profile-picture: User ${userId} not found. Returning 404.`);
+      console.log(
+        `POST /api/update-profile-picture: User ${userId} not found. Returning 404.`
+      );
       const response = NextResponse.json(
         { success: false, message: "User not found." },
         { status: 404 }
@@ -90,20 +104,35 @@ export async function POST(_req: NextRequest) {
       return corsMiddleware(_req, response);
     }
 
-    console.log(`POST /api/update-profile-picture: Profile picture updated for user ${userId}.`);
+    console.log(
+      `POST /api/update-profile-picture: Profile picture updated for user ${userId}.`
+    );
     const response = NextResponse.json(
-      { success: true, message: "Profile picture updated successfully.", profilePicture: updatedUser.profilePicture },
+      {
+        success: true,
+        message: "Profile picture updated successfully.",
+        profilePicture: updatedUser.profilePicture,
+      },
       { status: 200 }
     );
     return corsMiddleware(_req, response);
-
-  } catch (error: unknown) { // Change 'any' to 'unknown'
-    console.error("POST /api/update-profile-picture: Server error during profile picture update:", error);
+  } catch (error: unknown) {
+    console.error(
+      "POST /api/update-profile-picture: Server error during profile picture update:",
+      error
+    );
     let errorMessage = "Internal server error during profile picture update.";
-    if (error instanceof Error) { // Check if it's an instance of Error
+
+    // Safely extract error message
+    if (error instanceof Error) {
       errorMessage = error.message;
-    } else if (typeof error === 'object' && error !== null && 'message' in error && typeof (error as any).message === 'string') {
-        errorMessage = (error as any).message; // Fallback for non-Error objects with a message
+    } else if (
+      typeof error === "object" &&
+      error !== null &&
+      "message" in error &&
+      typeof (error as { message: unknown }).message === "string"
+    ) {
+      errorMessage = (error as { message: string }).message;
     }
 
     const response = NextResponse.json(

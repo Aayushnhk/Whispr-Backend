@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import dbConnect from "@/lib/db/connect";
-import Message, { IMessage } from "@/models/Message";
-import User, { IUser } from "@/models/User";
-import jwt from "jsonwebtoken";
-import mongoose from "mongoose";
 import { v2 as cloudinary } from "cloudinary";
 import { corsMiddleware, handleOptions } from "@/lib/cors";
+import jwt from "jsonwebtoken";
 
+// Cloudinary configuration (still needed for signature generation)
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -25,44 +22,7 @@ interface DecodedToken {
   id: string;
 }
 
-interface CloudinaryError {
-  http_code?: number;
-  message: string;
-  stack?: string;
-}
-
-interface CloudinaryUploadResult {
-  secure_url: string;
-}
-
-interface UploadResponse {
-  success: boolean;
-  message: string;
-  fileUrl: string;
-  messageDetails: {
-    id: mongoose.Types.ObjectId;
-    room?: string;
-    sender: {
-      id: mongoose.Types.ObjectId;
-      firstName: string;
-      lastName: string;
-    };
-    receiver?: {
-      id?: mongoose.Types.ObjectId;
-      firstName?: string;
-      lastName?: string;
-    };
-    fileUrl?: string;
-    fileType: IMessage["fileType"];
-    fileName?: string;
-    chatType: IMessage["chatType"];
-    isEdited: boolean;
-    createdAt: Date;
-    replyTo?: IMessage["replyTo"];
-    isProfilePictureUpload?: boolean;
-  };
-}
-
+// Helper to verify JWT token
 async function verifyToken(
   req: NextRequest
 ): Promise<{ id: string } | { error: string; status: number }> {
@@ -89,21 +49,15 @@ export async function OPTIONS() {
   return handleOptions();
 }
 
+// This POST request will now generate a Cloudinary signature for direct client-side upload
 export async function POST(_req: NextRequest) {
-  await dbConnect();
-  console.log("POST /api/upload: Incoming upload request.");
+  console.log("POST /api/upload (Signature Endpoint): Incoming request.");
 
-  console.log("Cloudinary Config:", {
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY ? "set" : "not set",
-    api_secret: process.env.CLOUDINARY_API_SECRET ? "set" : "not set",
-    upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET,
-  });
-
+  // Authenticate the request from the client
   const authResult = await verifyToken(_req);
   if ("error" in authResult) {
     console.log(
-      `POST /api/upload: Authentication failed - ${authResult.error}. Returning ${authResult.status}.`
+      `POST /api/upload (Signature Endpoint): Authentication failed - ${authResult.error}. Returning ${authResult.status}.`
     );
     const response = NextResponse.json(
       { success: false, message: authResult.error },
@@ -113,295 +67,66 @@ export async function POST(_req: NextRequest) {
   }
 
   const currentUserId = authResult.id;
-  console.log(`POST /api/upload: User ${currentUserId} is authenticated.`);
+  console.log(`POST /api/upload (Signature Endpoint): User ${currentUserId} is authenticated.`);
 
   try {
-    const formData = await _req.formData();
-    const file = formData.get("file") as File;
-    const room = formData.get("room") as string;
-    const senderId = formData.get("senderId") as string;
-    const fileType = formData.get("fileType") as IMessage["fileType"];
-    const fileName = formData.get("fileName") as string;
-    const chatType = formData.get("chatType") as IMessage["chatType"];
-    const isProfilePictureUpload =
-      formData.get("isProfilePictureUpload") === "true";
-    const receiverId = formData.get("receiverId") as string | undefined;
-    const receiverFirstName = formData.get("receiverFirstName") as
-      | string
-      | undefined;
-    const receiverLastName = formData.get("receiverLastName") as
-      | string
-      | undefined;
+    // Expect parameters from the client needed for signature generation
+    const { folder, public_id, resource_type, upload_preset } = await _req.json();
 
-    console.log("FormData fields:", {
-      file: !!file,
-      room,
-      senderId,
-      fileType,
-      fileName,
-      chatType,
-      isProfilePictureUpload,
-      receiverId,
-      receiverFirstName,
-      receiverLastName,
-    });
-
-    if (!file) {
-      console.log("POST /api/upload: No file uploaded. Returning 400.");
+    if (!upload_preset) {
+      console.log("POST /api/upload (Signature Endpoint): Missing upload_preset. Returning 400.");
       const response = NextResponse.json(
-        { success: false, message: "No file uploaded." },
+        { success: false, message: "Upload preset is required." },
         { status: 400 }
       );
       return corsMiddleware(_req, response);
     }
 
-    const MAX_FILE_SIZE = 5 * 1024 * 1024;
-    if (file.size > MAX_FILE_SIZE) {
-      console.log("POST /api/upload: File size exceeds 5MB limit. Returning 413.");
-      const response = NextResponse.json(
-        { success: false, message: "File size exceeds 5MB limit" },
-        { status: 413 }
-      );
-      return corsMiddleware(_req, response);
-    }
-
-    if (!senderId || !fileType || !chatType) {
-      console.log("POST /api/upload: Missing required fields. Returning 400.");
-      const response = NextResponse.json(
-        { success: false, message: "Missing senderId, fileType, or chatType." },
-        { status: 400 }
-      );
-      return corsMiddleware(_req, response);
-    }
-
-    if (chatType === "room" && !room) {
-      console.log(
-        "POST /api/upload: Missing room for room chat. Returning 400."
-      );
-      const response = NextResponse.json(
-        { success: false, message: "Room is required for room chat." },
-        { status: 400 }
-      );
-      return corsMiddleware(_req, response);
-    }
-
-    if (
-      chatType === "private" &&
-      !isProfilePictureUpload &&
-      (!receiverId || !receiverFirstName || !receiverLastName)
-    ) {
-      console.log(
-        "POST /api/upload: Missing receiver details for private chat. Returning 400."
-      );
-      const response = NextResponse.json(
-        {
-          success: false,
-          message: "Receiver details are required for private chat.",
-        },
-        { status: 400 }
-      );
-      return corsMiddleware(_req, response);
-    }
-
-    if (senderId !== currentUserId) {
-      console.log(`POST /api/upload: Sender ID mismatch. Returning 403.`);
-      const response = NextResponse.json(
-        { success: false, message: "Unauthorized: Sender ID mismatch." },
-        { status: 403 }
-      );
-      return corsMiddleware(_req, response);
-    }
-
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-
-    let resourceType: "image" | "video" | "raw";
-    if (file.type.startsWith("image/")) {
-      resourceType = "image";
-    } else if (
-      file.type.startsWith("video/") ||
-      file.type.startsWith("audio/")
-    ) {
-      resourceType = "video";
-    } else {
-      resourceType = "raw";
-    }
-
-    console.log(
-      `POST /api/upload: Uploading file to Cloudinary (resource_type: ${resourceType}).`
-    );
-
-    const uploadTimeout = 30000;
-    const result = await Promise.race([
-      new Promise<CloudinaryUploadResult>((resolve, reject) => {
-        cloudinary.uploader.upload_stream(
-          {
-            folder: isProfilePictureUpload
-              ? "WHISPR_profile_pictures"
-              : "WHISPR_messages",
-            resource_type: resourceType,
-            upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET,
-          },
-          (
-            error: CloudinaryError | undefined,
-            result: CloudinaryUploadResult | undefined
-          ) => {
-            if (error) {
-              console.error("Cloudinary upload error details:", {
-                message: error.message,
-                http_code: error.http_code,
-                stack: error.stack,
-              });
-              return reject(error);
-            }
-            if (!result || !result.secure_url) {
-              console.error("Cloudinary upload result missing secure_url:", result);
-              return reject(
-                new Error("Cloudinary upload did not return a secure_url.")
-              );
-            }
-            resolve(result);
-          }
-        ).end(buffer);
-      }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Upload timeout exceeded")), uploadTimeout)
-      ),
-    ]);
-
-    if (!result || typeof result !== "object" || !("secure_url" in result)) {
-      console.error("Cloudinary upload did not return a secure_url:", result);
-      const response = NextResponse.json(
-        { success: false, message: "Failed to get file URL from Cloudinary." },
-        { status: 500 }
-      );
-      return corsMiddleware(_req, response);
-    }
-
-    const fileUrl = result.secure_url as string;
-    console.log(
-      `POST /api/upload: File uploaded to Cloudinary. URL: ${fileUrl}`
-    );
-
-    const sender = (await User.findById(senderId).select(
-      "firstName lastName"
-    )) as IUser | null;
-    if (!sender) {
-      console.log(`POST /api/upload: Sender not found. Returning 404.`);
-      const response = NextResponse.json(
-        { success: false, message: "Sender not found." },
-        { status: 404 }
-      );
-      return corsMiddleware(_req, response);
-    }
-
-    const newMessageData: Partial<IMessage> = {
-      sender: new mongoose.Types.ObjectId(senderId),
-      firstName: sender.firstName,
-      lastName: sender.lastName,
-      fileUrl,
-      fileType,
-      fileName: fileName || file.name,
-      chatType,
-      isEdited: false,
-      isProfilePictureUpload,
+    const timestamp = Math.round(new Date().getTime() / 1000);
+    const params: Record<string, string | number> = {
+      timestamp,
+      upload_preset,
+      // Default to 'image' if resource_type is not explicitly provided by client
+      resource_type: resource_type || 'image',
     };
 
-    if (chatType === "room") {
-      newMessageData.room = room;
-    } else if (chatType === "private" && !isProfilePictureUpload) {
-      newMessageData.receiver = new mongoose.Types.ObjectId(
-        receiverId as string
-      );
-      newMessageData.receiverFirstName = receiverFirstName;
-      newMessageData.receiverLastName = receiverLastName;
+    if (folder) {
+      params.folder = folder;
+    }
+    // Allow the client to suggest a public_id for finer control, or let Cloudinary generate one
+    if (public_id) {
+        params.public_id = public_id;
     }
 
-    const newMessage = new Message(newMessageData);
-    await newMessage.save();
-    console.log("POST /api/upload: Message saved to DB successfully.");
+    // Generate the Cloudinary signature
+    const signature = cloudinary.utils.api_sign_request(
+      params,
+      process.env.CLOUDINARY_API_SECRET as string
+    );
 
-    if (isProfilePictureUpload) {
-      try {
-        await User.findByIdAndUpdate(
-          senderId,
-          { profilePicture: fileUrl },
-          { new: true, runValidators: true }
-        );
-        console.log(
-          `POST /api/upload: Updated profile picture for user ${senderId}`
-        );
-      } catch (updateError) {
-        console.error(
-          `POST /api/upload: Failed to update profile picture:`,
-          updateError
-        );
-      }
-    }
-
-    const response: UploadResponse = {
+    // Return the necessary details for the client to perform direct upload
+    const response = NextResponse.json({
       success: true,
-      message: "File uploaded and message sent successfully!",
-      fileUrl,
-      messageDetails: {
-        id: newMessage._id,
-        room: newMessage.room,
-        sender: {
-          id: newMessage.sender,
-          firstName: newMessage.firstName,
-          lastName: newMessage.lastName,
-        },
-        receiver: newMessage.receiver
-          ? {
-              id: newMessage.receiver,
-              firstName: newMessage.receiverFirstName,
-              lastName: newMessage.receiverLastName,
-            }
-          : undefined,
-        fileUrl: newMessage.fileUrl,
-        fileType: newMessage.fileType,
-        fileName: newMessage.fileName,
-        chatType: newMessage.chatType,
-        isEdited: newMessage.isEdited,
-        createdAt: newMessage.createdAt,
-        replyTo: newMessage.replyTo,
-        isProfilePictureUpload: newMessage.isProfilePictureUpload,
-      },
-    };
+      signature,
+      timestamp,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET,
+      folder: folder, // Echo back the requested folder
+      public_id: public_id, // Echo back the requested public_id
+      resource_type: resource_type, // Echo back the requested resource_type
+    }, { status: 200 });
 
-    const nextResponse = NextResponse.json(response, { status: 200 });
-    return corsMiddleware(_req, nextResponse);
-  } catch (error: unknown) {
-    console.error("POST /api/upload: Server error during upload:", error);
+    console.log("POST /api/upload (Signature Endpoint): Signature generated successfully.");
+    return corsMiddleware(_req, response);
 
-    let status = 500;
-    let message = "Internal server error during upload";
-
-    if (typeof error === "object" && error !== null) {
-      if ("http_code" in error) {
-        status = (error as CloudinaryError).http_code || 500;
-        message = (error as CloudinaryError).message;
-        if (message.includes("invalid JSON response")) {
-          message = "Cloudinary returned an unexpected HTML response. Check configuration.";
-        }
-      } else if ("message" in error) {
-        message = (error as { message: string }).message;
-      }
-    }
-
+  } catch (error: any) {
+    console.error("POST /api/upload (Signature Endpoint): Server error during signature generation:", error);
     const response = NextResponse.json(
-      {
-        success: false,
-        message,
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
-      {
-        status,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
+      { success: false, message: error.message || "Failed to generate Cloudinary signature." },
+      { status: 500 }
     );
     return corsMiddleware(_req, response);
   }
 }
+

@@ -245,7 +245,7 @@ export async function POST(_req: NextRequest) {
             resolve(result);
           }
         );
-        pipeline(fileStream as any, uploadStream).catch(reject);
+        pipeline(fileStream as NodeJS.ReadableStream, uploadStream).catch(reject);
       }
     );
 

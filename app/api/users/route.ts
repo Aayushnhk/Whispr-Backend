@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/db/connect';
 import User, { IUser } from '@/models/User';
 import mongoose from 'mongoose';
-import { verifyToken } from '@/lib/auth';
+import { verifyToken } from '@/lib/auth'; // Assuming verifyToken returns a payload with 'id'
 import { corsMiddleware, handleOptions } from '@/lib/cors';
 
 interface DecodedToken {
-  userId: string;
+  id: string; // CHANGE THIS from 'userId' to 'id'
 }
 
 interface UsersRequest {
@@ -21,12 +21,10 @@ interface UserResponse {
   profilePicture: string;
 }
 
-// FIX: Removed 'request: NextRequest' as it's unused when calling handleOptions()
 export async function OPTIONS() {
   return handleOptions();
 }
 
-// Your GET handler
 export async function GET(req: NextRequest) {
   console.log('API/users: Incoming GET request.');
   await dbConnect();
@@ -48,11 +46,15 @@ export async function GET(req: NextRequest) {
   }
 
   const decodedToken = verifyToken(token) as DecodedToken | null;
-  if (!decodedToken || !decodedToken.userId) {
-    console.warn('API/users: Invalid or expired token, or missing userId in token.');
+  // FIX: Check for 'decodedToken.id' instead of 'decodedToken.userId'
+  if (!decodedToken || !decodedToken.id) {
+    console.warn('API/users: Invalid or expired token, or missing ID in token.');
     const response = NextResponse.json({ message: 'Invalid or expired token' }, { status: 401 });
     return corsMiddleware(req, response);
   }
+
+  // You might also need to use decodedToken.id if you need the authenticated user's ID
+  // const authenticatedUserId = decodedToken.id; 
 
   try {
     if (!mongoose.Types.ObjectId.isValid(userId)) {
@@ -105,13 +107,15 @@ export async function POST(_req: NextRequest) {
   }
 
   const decodedToken = verifyToken(token) as DecodedToken | null;
-  if (!decodedToken || !decodedToken.userId) {
-    console.warn('API/users: Invalid or expired token, or missing userId in token.');
+  // FIX: Check for 'decodedToken.id' instead of 'decodedToken.userId'
+  if (!decodedToken || !decodedToken.id) {
+    console.warn('API/users: Invalid or expired token, or missing ID in token.');
     const response = NextResponse.json({ message: 'Invalid or expired token' }, { status: 401 });
     return corsMiddleware(_req, response);
   }
 
-  console.log('API/users: Authenticated user ID:', decodedToken.userId);
+  // FIX: Use decodedToken.id here too
+  console.log('API/users: Authenticated user ID:', decodedToken.id);
 
   try {
     const { userIds }: UsersRequest = await _req.json();

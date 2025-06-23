@@ -5,6 +5,7 @@ export interface IMessage extends Document {
   sender: mongoose.Types.ObjectId;
   firstName: string;
   lastName: string;
+  senderProfilePicture?: string; // ADDED: Profile picture for the sender
   room?: string;
   receiver?: mongoose.Types.ObjectId;
   receiverFirstName?: string;
@@ -46,6 +47,10 @@ const MessageSchema: Schema<IMessage> = new Schema(
       required: true,
       trim: true,
       minlength: [1, "Sender last name cannot be empty"],
+    },
+    senderProfilePicture: { // ADDED: Schema field for profile picture
+      type: String,
+      required: false,
     },
     room: {
       type: String,

@@ -1,4 +1,4 @@
-// WHISPR-BACKEND/app/api/users/route.ts 
+// WHISPR-BACKEND/app/api/users/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/db/connect';
 import User, { IUser } from '@/models/User';
@@ -21,16 +21,17 @@ interface UserResponse {
   profilePicture: string;
 }
 
-export async function OPTIONS(request: NextRequest) {
+// FIX: Removed 'request: NextRequest' as it's unused when calling handleOptions()
+export async function OPTIONS() {
   return handleOptions();
 }
 
-// NEW GET handler for /api/users?userId=<id>
+// Your GET handler
 export async function GET(req: NextRequest) {
   console.log('API/users: Incoming GET request.');
   await dbConnect();
 
-  const userId = req.nextUrl.searchParams.get('userId'); // Extract userId from query params
+  const userId = req.nextUrl.searchParams.get('userId');
 
   if (!userId) {
     const response = NextResponse.json({ message: 'User ID query parameter is required' }, { status: 400 });
@@ -131,7 +132,7 @@ export async function POST(_req: NextRequest) {
     console.log('API/users: Fetching details for user IDs:', userIds);
     const users = await User.find({ _id: { $in: userIds } })
       .select('_id firstName lastName profilePicture')
-      .lean() as Array<Pick<IUser, '_id' | 'firstName' | 'lastName' | 'lastName' | 'profilePicture'>>;
+      .lean() as Array<Pick<IUser, '_id' | 'firstName' | 'lastName' | 'profilePicture'>>;
 
     if (users.length === 0) {
       console.warn('API/users: No users found for the provided IDs.');

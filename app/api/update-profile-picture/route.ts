@@ -97,10 +97,17 @@ export async function POST(_req: NextRequest) {
     );
     return corsMiddleware(_req, response);
 
-  } catch (error: any) {
+  } catch (error: unknown) { // Change 'any' to 'unknown'
     console.error("POST /api/update-profile-picture: Server error during profile picture update:", error);
+    let errorMessage = "Internal server error during profile picture update.";
+    if (error instanceof Error) { // Check if it's an instance of Error
+      errorMessage = error.message;
+    } else if (typeof error === 'object' && error !== null && 'message' in error && typeof (error as any).message === 'string') {
+        errorMessage = (error as any).message; // Fallback for non-Error objects with a message
+    }
+
     const response = NextResponse.json(
-      { success: false, message: error.message || "Internal server error during profile picture update." },
+      { success: false, message: errorMessage },
       { status: 500 }
     );
     return corsMiddleware(_req, response);

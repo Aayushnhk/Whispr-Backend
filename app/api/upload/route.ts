@@ -237,8 +237,8 @@ export async function POST(_req: NextRequest) {
         cloudinary.uploader.upload_stream(
           {
             folder: isProfilePictureUpload
-              ? "chat_app_profile_pictures"
-              : "chat_app_messages",
+              ? "WHISPR_profile_pictures"
+              : "WHISPR_messages",
             resource_type: resourceType,
             upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET,
           },

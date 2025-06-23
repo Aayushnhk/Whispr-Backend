@@ -245,7 +245,10 @@ export async function POST(_req: NextRequest) {
             resolve(result);
           }
         );
-        pipeline(fileStream as NodeJS.ReadableStream, uploadStream).catch(reject);
+        const nodeStream = require('stream').Readable.fromWeb
+          ? require('stream').Readable.fromWeb(fileStream)
+          : (fileStream as unknown as NodeJS.ReadableStream);
+        pipeline(nodeStream, uploadStream).catch(reject);
       }
     );
 

@@ -28,6 +28,7 @@ interface DecodedToken {
 interface CloudinaryError {
   http_code?: number;
   message: string;
+  stack?: string;
 }
 
 interface CloudinaryUploadResult {
@@ -47,7 +48,7 @@ interface UploadResponse {
       lastName: string;
     };
     receiver?: {
-      id: mongoose.Types.ObjectId;
+      id?: mongoose.Types.ObjectId;
       firstName?: string;
       lastName?: string;
     };
@@ -92,6 +93,13 @@ export async function POST(_req: NextRequest) {
   await dbConnect();
   console.log("POST /api/upload: Incoming upload request.");
 
+  console.log("Cloudinary Config:", {
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY ? "set" : "not set",
+    api_secret: process.env.CLOUDINARY_API_SECRET ? "set" : "not set",
+    upload_preset: process.env.CLOUDINARY_UPLOAD_PRESET,
+  });
+
   const authResult = await verifyToken(_req);
   if ("error" in authResult) {
     console.log(
@@ -117,7 +125,6 @@ export async function POST(_req: NextRequest) {
     const chatType = formData.get("chatType") as IMessage["chatType"];
     const isProfilePictureUpload =
       formData.get("isProfilePictureUpload") === "true";
-
     const receiverId = formData.get("receiverId") as string | undefined;
     const receiverFirstName = formData.get("receiverFirstName") as
       | string
@@ -126,11 +133,18 @@ export async function POST(_req: NextRequest) {
       | string
       | undefined;
 
-    console.log(
-      `POST /api/upload: Received file for room: ${
-        room || "N/A"
-      }, senderId: ${senderId}, fileType: ${fileType}, chatType: ${chatType}, isProfilePictureUpload: ${isProfilePictureUpload}`
-    );
+    console.log("FormData fields:", {
+      file: !!file,
+      room,
+      senderId,
+      fileType,
+      fileName,
+      chatType,
+      isProfilePictureUpload,
+      receiverId,
+      receiverFirstName,
+      receiverLastName,
+    });
 
     if (!file) {
       console.log("POST /api/upload: No file uploaded. Returning 400.");
@@ -141,10 +155,11 @@ export async function POST(_req: NextRequest) {
       return corsMiddleware(_req, response);
     }
 
-    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    const MAX_FILE_SIZE = 5 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
+      console.log("POST /api/upload: File size exceeds 5MB limit. Returning 413.");
       const response = NextResponse.json(
-        { success: false, message: "File size exceeds 50MB limit" },
+        { success: false, message: "File size exceeds 5MB limit" },
         { status: 413 }
       );
       return corsMiddleware(_req, response);
@@ -232,10 +247,15 @@ export async function POST(_req: NextRequest) {
             result: CloudinaryUploadResult | undefined
           ) => {
             if (error) {
-              console.error("Cloudinary upload error:", error);
+              console.error("Cloudinary upload error details:", {
+                message: error.message,
+                http_code: error.http_code,
+                stack: error.stack,
+              });
               return reject(error);
             }
             if (!result || !result.secure_url) {
+              console.error("Cloudinary upload result missing secure_url:", result);
               return reject(
                 new Error("Cloudinary upload did not return a secure_url.")
               );
@@ -357,12 +377,13 @@ export async function POST(_req: NextRequest) {
     let status = 500;
     let message = "Internal server error during upload";
 
-    if (typeof error === "string") {
-      message = error;
-    } else if (typeof error === "object" && error !== null) {
+    if (typeof error === "object" && error !== null) {
       if ("http_code" in error) {
         status = (error as CloudinaryError).http_code || 500;
         message = (error as CloudinaryError).message;
+        if (message.includes("invalid JSON response")) {
+          message = "Cloudinary returned an unexpected HTML response. Check configuration.";
+        }
       } else if ("message" in error) {
         message = (error as { message: string }).message;
       }

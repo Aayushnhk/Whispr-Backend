@@ -16,6 +16,7 @@ interface CloudinaryUploadResult {
 interface CloudinaryError {
   message: string;
   http_code?: number;
+  stack?: string;
 }
 
 export async function uploadFileToCloudinary(

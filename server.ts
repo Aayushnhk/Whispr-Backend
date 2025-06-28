@@ -29,7 +29,7 @@ interface PrivateMessageArgs {
   senderId: string;
   senderFirstName: string;
   senderLastName: string;
-  senderProfilePicture?: string; // ADDED: Profile picture for the sender
+  senderProfilePicture?: string;
   receiverId: string;
   receiverFirstName: string;
   receiverLastName: string;
@@ -52,7 +52,7 @@ interface SendMessageArgs {
   userId: string;
   firstName: string;
   lastName: string;
-  profilePicture?: string; // ADDED: Profile picture for public room messages
+  profilePicture?: string;
   text?: string;
   room: string;
   fileUrl?: string;
@@ -95,7 +95,7 @@ interface GetPrivateMessagesArgs {
 interface OnlineUser {
   userId: string;
   fullName: string;
-  profilePicture: string; // ADDED: Profile picture for online user list
+  profilePicture: string;
 }
 
 interface UserSocketData {
@@ -195,8 +195,9 @@ app.prepare().then(() => {
             globalOnlineUsers.set(userId, {
               userId,
               fullName,
-              profilePicture: profilePictureValue, // Ensured profilePicture is set here
+              profilePicture: profilePictureValue,
             });
+            await User.findByIdAndUpdate(userId, { isOnline: true });
             io.emit("onlineUsers", Array.from(globalOnlineUsers.values()));
           }
           socket.emit("onlineUsers", Array.from(globalOnlineUsers.values()));
@@ -303,7 +304,8 @@ app.prepare().then(() => {
           const userDoc = (await User.findById(userId)) as IUser | null;
           const profilePicture =
             userDoc?.profilePicture || "/default-avatar.png";
-          globalOnlineUsers.set(userId, { userId, fullName, profilePicture }); // Ensured profilePicture is set here
+          globalOnlineUsers.set(userId, { userId, fullName, profilePicture });
+          await User.findByIdAndUpdate(userId, { isOnline: true });
           io.emit("onlineUsers", Array.from(globalOnlineUsers.values()));
         }
         socket.emit("onlineUsers", Array.from(globalOnlineUsers.values()));
@@ -501,16 +503,17 @@ app.prepare().then(() => {
             };
           }
 
-          // Fetch sender's profile picture for the message
-          const senderUser = (await User.findById(userId).select('profilePicture').lean()) as IUser | null;
-          const senderProfilePicture = senderUser?.profilePicture || '/default-avatar.png'; // Fallback to default
-
+          const senderUser = (await User.findById(userId)
+            .select("profilePicture")
+            .lean()) as IUser | null;
+          const senderProfilePicture =
+            senderUser?.profilePicture || "/default-avatar.png";
 
           const newMessage = new Message({
             sender: userId,
             firstName,
             lastName,
-            senderProfilePicture: senderProfilePicture, // ADDED: Store profile picture
+            senderProfilePicture: senderProfilePicture,
             room,
             text: text || undefined,
             chatType: "room",
@@ -531,7 +534,7 @@ app.prepare().then(() => {
             id,
             sender: fullName,
             senderId: userId,
-            senderProfilePicture: newMessage.senderProfilePicture, // ADDED: Emit profile picture
+            senderProfilePicture: newMessage.senderProfilePicture,
             text: newMessage.text,
             timestamp: newMessage.createdAt.toISOString(),
             room: newMessage.room,
@@ -664,15 +667,17 @@ app.prepare().then(() => {
             };
           }
 
-          // Fetch sender's profile picture for the private message
-          const senderUser = (await User.findById(senderId).select('profilePicture').lean()) as IUser | null;
-          const senderProfilePicture = senderUser?.profilePicture || '/default-avatar.png'; // Fallback to default
+          const senderUser = (await User.findById(senderId)
+            .select("profilePicture")
+            .lean()) as IUser | null;
+          const senderProfilePicture =
+            senderUser?.profilePicture || "/default-avatar.png";
 
           const newMessage = new Message({
             sender: senderId,
             firstName: senderFirstName,
             lastName: senderLastName,
-            senderProfilePicture: senderProfilePicture, // ADDED: Store profile picture
+            senderProfilePicture: senderProfilePicture,
             receiver: receiverId,
             receiverFirstName: updatedFirstName,
             receiverLastName: updatedLastName,
@@ -690,7 +695,7 @@ app.prepare().then(() => {
             id,
             senderId,
             senderUsername: senderFullName,
-            senderProfilePicture: newMessage.senderProfilePicture, // ADDED: Emit profile picture
+            senderProfilePicture: newMessage.senderProfilePicture,
             text: newMessage.text,
             timestamp: newMessage.createdAt.toISOString(),
             chatType: newMessage.chatType,
@@ -771,24 +776,33 @@ app.prepare().then(() => {
             ],
           }).lean()) as IMessage[];
 
-          // Fetch profile pictures for all unique senders in the retrieved messages
-          const uniqueSenderIds = new Set(messages.map(m => m.sender.toString()));
-          const senders = await User.find({ _id: { $in: Array.from(uniqueSenderIds) } }).select('profilePicture').lean();
-          const senderProfileMap = new Map(senders.map(u => [u._id.toString(), u.profilePicture || '/default-avatar.png']));
-
+          const uniqueSenderIds = new Set(
+            messages.map((m) => m.sender.toString())
+          );
+          const senders = await User.find({
+            _id: { $in: Array.from(uniqueSenderIds) },
+          })
+            .select("profilePicture")
+            .lean();
+          const senderProfileMap = new Map(
+            senders.map((u) => [
+              u._id.toString(),
+              u.profilePicture || "/default-avatar.png",
+            ])
+          );
 
           const formattedMessages = messages.map((m) => ({
             _id: m._id.toString(),
             id: m._id.toString(),
             senderId: m.sender.toString(),
             senderUsername: `${m.firstName} ${m.lastName}`,
-            senderProfilePicture: senderProfileMap.get(m.sender.toString()), // ADDED: Get profile picture from map
+            senderProfilePicture: senderProfileMap.get(m.sender.toString()),
             text: m.text,
             timestamp: m.createdAt.toISOString(),
             receiverId: m.receiver?.toString(),
             receiverUsername:
               m.receiverFirstName && m.receiverLastName
-                ? `${m.receiverFirstName} ${m.lastName}` // FIX: Was m.lastName, should be m.receiverLastName
+                ? `${m.receiverFirstName} ${m.receiverLastName}`
                 : undefined,
             receiverFirstName: m.receiverFirstName,
             receiverLastName: m.receiverLastName,
@@ -849,20 +863,17 @@ app.prepare().then(() => {
           const fullSenderName = `${message.firstName} ${message.lastName}`;
           const fullReceiverName =
             message.receiverFirstName && message.receiverLastName
-              ? `${message.receiverFirstName} ${message.receiverLastName}` // FIX: Was message.lastName
+              ? `${message.receiverFirstName} ${message.receiverLastName}`
               : undefined;
 
-          // Re-fetch sender profile picture for the updated message, if it's not stored on the message directly
-          // Assuming senderProfilePicture is now stored in the Message model after save()
           const senderProfilePicture = message.senderProfilePicture;
-
 
           const updatedMessageData = {
             _id: message._id.toString(),
             id: message._id.toString(),
             senderId: message.sender.toString(),
             senderUsername: fullSenderName,
-            senderProfilePicture: senderProfilePicture, // ADDED: Include profile picture
+            senderProfilePicture: senderProfilePicture,
             text: message.text,
             timestamp: message.createdAt.toISOString(),
             isEdited: true,
@@ -998,7 +1009,7 @@ app.prepare().then(() => {
       }
     );
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
       console.log(`Disconnected: ${socket.id}`);
       if (users.has(socket.id)) {
         const { firstName, lastName, currentRoom, userId } = users.get(
@@ -1032,6 +1043,7 @@ app.prepare().then(() => {
           userSockets.delete(socket.userId);
           if (socket.userId) {
             globalOnlineUsers.delete(socket.userId);
+            await User.findByIdAndUpdate(socket.userId, { isOnline: false });
             io.emit("onlineUsers", Array.from(globalOnlineUsers.values()));
           }
         }

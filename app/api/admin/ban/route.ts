@@ -120,18 +120,21 @@ export async function POST(_req: NextRequest) {
     userToUpdate.role = role;
     await userToUpdate.save();
 
+    // Use toObject() to ensure all Mongoose document properties are included
+    const userResponseData = userToUpdate.toObject({ getters: true, virtuals: true });
+
     const response = NextResponse.json({
       message: `User ${userToUpdate.firstName} ${userToUpdate.lastName} role updated to ${role}`,
       user: {
-        id: userToUpdate._id,
-        firstName: userToUpdate.firstName,
-        lastName: userToUpdate.lastName,
-        email: userToUpdate.email,
-        role: userToUpdate.role,
-        profilePicture: userToUpdate.profilePicture,
-        banned: userToUpdate.banned,
-        createdAt: userToUpdate.createdAt,
-        updatedAt: userToUpdate.updatedAt,
+        id: userResponseData._id,
+        firstName: userResponseData.firstName,
+        lastName: userResponseData.lastName,
+        email: userResponseData.email,
+        role: userResponseData.role,
+        profilePicture: userResponseData.profilePicture,
+        banned: userResponseData.banned,
+        createdAt: userResponseData.createdAt,
+        updatedAt: userResponseData.updatedAt,
       },
     }, { status: 200 });
 
@@ -190,18 +193,21 @@ export async function PUT(_req: NextRequest) {
     userToUpdate.banned = bannedStatus;
     await userToUpdate.save();
 
+    // Use toObject() to ensure all Mongoose document properties are included
+    const userResponseData = userToUpdate.toObject({ getters: true, virtuals: true });
+
     const response = NextResponse.json({
       message: `User ${userToUpdate.firstName} ${userToUpdate.lastName} has been ${bannedStatus ? 'banned' : 'unbanned'}.`,
       user: {
-        _id: userToUpdate._id,
-        firstName: userToUpdate.firstName,
-        lastName: userToUpdate.lastName,
-        email: userToUpdate.email,
-        role: userToUpdate.role,
-        banned: userToUpdate.banned,
-        profilePicture: userToUpdate.profilePicture,
-        createdAt: userToUpdate.createdAt,
-        updatedAt: userToUpdate.updatedAt,
+        _id: userResponseData._id,
+        firstName: userResponseData.firstName,
+        lastName: userResponseData.lastName,
+        email: userResponseData.email,
+        role: userResponseData.role,
+        banned: userResponseData.banned,
+        profilePicture: userResponseData.profilePicture,
+        createdAt: userResponseData.createdAt,
+        updatedAt: userResponseData.updatedAt,
       },
     }, { status: 200 });
 

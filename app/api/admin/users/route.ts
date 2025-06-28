@@ -105,7 +105,8 @@ export async function POST(_req: NextRequest) {
       return corsMiddleware(_req, response);
     }
 
-    if ((userToUpdate._id as unknown as { toString: () => string }).toString() === authReq.user.id && role === 'user') {
+    // Simplified _id.toString() usage
+    if (userToUpdate._id.toString() === authReq.user.id && role === 'user') {
       const response = NextResponse.json({ message: "Cannot demote yourself to a regular user." }, { status: 403 });
       return corsMiddleware(_req, response);
     }
@@ -113,18 +114,21 @@ export async function POST(_req: NextRequest) {
     userToUpdate.role = role;
     await userToUpdate.save();
 
+    // Use toObject() to ensure all Mongoose document properties are included
+    const userResponseData = userToUpdate.toObject({ getters: true, virtuals: true });
+
     const response = NextResponse.json({
       message: `User ${userToUpdate.firstName} ${userToUpdate.lastName} role updated to ${role}`,
       user: {
-        id: userToUpdate._id,
-        firstName: userToUpdate.firstName,
-        lastName: userToUpdate.lastName,
-        email: userToUpdate.email,
-        role: userToUpdate.role,
-        profilePicture: userToUpdate.profilePicture,
-        banned: userToUpdate.banned,
-        createdAt: userToUpdate.createdAt,
-        updatedAt: userToUpdate.updatedAt,
+        id: userResponseData._id,
+        firstName: userResponseData.firstName,
+        lastName: userResponseData.lastName,
+        email: userResponseData.email,
+        role: userResponseData.role,
+        profilePicture: userResponseData.profilePicture,
+        banned: userResponseData.banned,
+        createdAt: userResponseData.createdAt,
+        updatedAt: userResponseData.updatedAt,
       },
     }, { status: 200 });
 
